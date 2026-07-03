@@ -41,7 +41,7 @@ npm install
 # 1. Скопіювати env файл
 cp .env.example .env
 
-# 2. Піднятti весь стек
+# 2. Підняти весь стек
 docker-compose up --build
 
 # 3. У окремому терміналі — застосувати seed (після того, як api стартував)
