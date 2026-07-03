@@ -58,6 +58,14 @@ export interface RiskBreakdown {
   humanitarian: number;
 }
 
+// Annual GDP data point (current US$), parsed from the World Bank API.
+// Served by GET /countries/:id/gdp-history.
+export interface GdpHistoryEntry {
+  countryId: string;
+  year: number;
+  gdpUsd: number;
+}
+
 // ─────────────────────────────────────────────
 // Events
 // ─────────────────────────────────────────────

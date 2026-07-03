@@ -65,9 +65,25 @@ model Country {
   events     Event[]
   articles   Article[]
   riskScores RiskScoreHistory[]
+  gdpHistory GdpHistory[]
 
   @@map("countries")
   @@index([status])
+}
+
+// Annual GDP (current US$) per country, parsed automatically from the
+// World Bank API (indicator NY.GDP.MKTP.CD). Feeds the GDP-trend-based
+// stability classification in GdpService.
+model GdpHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  countryId String   @map("country_id") @db.Char(2)
+  country   Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  year      Int
+  gdpUsd    BigInt   @map("gdp_usd")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([countryId, year])
+  @@map("gdp_history")
 }
 
 model RiskScoreHistory {

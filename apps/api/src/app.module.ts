@@ -7,6 +7,7 @@ import { RedisModule } from './common/redis.module';
 import { HealthModule } from './health/health.module';
 import { CountriesModule } from './countries/countries.module';
 import { ArticlesModule } from './articles/articles.module';
+import { GdpModule } from './gdp/gdp.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -28,6 +29,7 @@ import { validateEnv } from './config/env.validation';
     HealthModule,
     CountriesModule,
     ArticlesModule,
+    GdpModule,
   ],
   providers: [
     {
