@@ -1,0 +1,162 @@
+'use client';
+
+import Link from 'next/link';
+import { useState } from 'react';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import dynamic from 'next/dynamic';
+import { useCountries, useCountry } from '@/hooks/useCountries';
+import { useMapStore } from '@/store/useMapStore';
+import { MapLegend } from '@/components/map/MapLegend';
+import { RegionFilterPanel } from '@/components/sidebar/RegionFilterPanel';
+import { CountrySidebar } from '@/components/sidebar/CountrySidebar';
+import { StatusBadge } from '@/components/sidebar/StatusBadge';
+import { GdpIndicator } from '@/components/sidebar/GdpIndicator';
+import { STATUS_COLOR, STATUS_LABEL } from '@geowatch/shared-types';
+import type { CountryStatus } from '@geowatch/shared-types';
+
+// react-simple-maps relies on browser globals (no SSR), so load it client-only.
+const WorldMap = dynamic(
+  () => import('@/components/map/WorldMap').then((m) => m.WorldMap),
+  { ssr: false },
+);
+
+const STATUS_ORDER: CountryStatus[] = ['conflict', 'crisis', 'unstable', 'stable'];
+
+export default function MapPage() {
+  const {
+    selectedCountryId,
+    selectCountry,
+    statusFilter,
+    setStatusFilter,
+    regionFilter,
+    setRegionFilter,
+  } = useMapStore();
+
+  // Two country lists serve different purposes:
+  // - `countries` (unfiltered by region) feeds the region panel, so its
+  //   region list and per-status counts always reflect the whole world.
+  // - `filteredCountries` is what's actually drawn on the map.
+  const { countries } = useCountries();
+  const { countries: filteredCountries, isLoading, isError } = useCountries({
+    status: statusFilter ?? undefined,
+    region: regionFilter ?? undefined,
+  });
+  const { country: selectedCountry } = useCountry(selectedCountryId);
+  const [search, setSearch] = useState('');
+
+  const visibleCountries = search
+    ? filteredCountries.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    : filteredCountries;
+
+  return (
+    <main className="flex h-screen flex-col bg-bg">
+      {/* Header */}
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-border/10 bg-bg-2 px-4">
+        <div className="flex items-center gap-2 text-sm font-semibold tracking-wide">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-status-conflict" />
+          GEOWATCH
+        </div>
+        <Link href="/" className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary">
+          ← Back to feed
+        </Link>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="rounded-full border border-status-conflict/30 bg-status-conflict/15 px-2 py-0.5 text-[10px] text-status-conflict">
+            ● LIVE
+          </span>
+          <input
+            value={search}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+            placeholder="Search countries..."
+            className="w-40 rounded-md border border-border/10 bg-bg-3 px-2.5 py-1 text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
+          />
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        <RegionFilterPanel
+          countries={countries}
+          regionFilter={regionFilter}
+          onSelectRegion={setRegionFilter}
+          statusFilter={statusFilter}
+          onSelectStatus={(s) => setStatusFilter(s)}
+        />
+
+        {/* Map area */}
+        <div className="relative flex-1">
+          {isError && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg/90">
+              <p className="max-w-sm text-center text-xs text-status-conflict">
+                Failed to load country data. Make sure the API is running and
+                reachable at NEXT_PUBLIC_API_URL.
+              </p>
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-bg">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-border/10 border-t-accent-blue" />
+            </div>
+          )}
+
+          <WorldMap
+            countries={visibleCountries}
+            selectedCountryId={selectedCountryId}
+            onSelectCountry={selectCountry}
+          />
+
+          <MapLegend />
+
+          {/* Stats */}
+          <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
+            {STATUS_ORDER.slice(0, 2).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(statusFilter === status ? null : status)}
+                className="min-w-[110px] rounded-lg border px-3 py-2 text-left backdrop-blur-sm transition-colors"
+                style={{
+                  backgroundColor:
+                    statusFilter === status ? `${STATUS_COLOR[status]}22` : 'rgba(17,20,24,0.9)',
+                  borderColor:
+                    statusFilter === status ? STATUS_COLOR[status] : 'rgba(255,255,255,0.1)',
+                }}
+              >
+                <div className="text-xl font-bold" style={{ color: STATUS_COLOR[status] }}>
+                  {countries.filter((c) => c.status === status).length}
+                </div>
+                <div className="text-[10px] text-text-tertiary">{STATUS_LABEL[status]}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Compact floating country card — quick glance before opening the
+              full detail sidebar, mirrors the reference dashboard's bottom-left card. */}
+          {selectedCountry && (
+            <div className="absolute bottom-4 left-4 z-10 w-64 rounded-lg border border-border/10 bg-bg-2/95 p-3 backdrop-blur-sm">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{selectedCountry.flagEmoji}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-text-primary">
+                    {selectedCountry.name}
+                  </div>
+                  <div className="truncate text-[10px] text-text-tertiary">
+                    {selectedCountry.capital} · Risk {selectedCountry.riskScore.toFixed(1)}
+                  </div>
+                  <div className="mt-1">
+                    <StatusBadge status={selectedCountry.status} />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 border-t border-border/10 pt-2.5">
+                <GdpIndicator gdpUsd={selectedCountry.gdpUsd} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <CountrySidebar countryId={selectedCountryId} onClose={() => selectCountry(null)} />
+      </div>
+    </main>
+  );
+}

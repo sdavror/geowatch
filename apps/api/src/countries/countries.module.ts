@@ -1,0 +1,11 @@
+import { Module } from '@nestjs/common';
+import { CountriesController } from './countries.controller';
+import { AdminCountriesController } from './admin-countries.controller';
+import { CountriesService } from './countries.service';
+
+@Module({
+  controllers: [CountriesController, AdminCountriesController],
+  providers: [CountriesService],
+  exports: [CountriesService],
+})
+export class CountriesModule {}

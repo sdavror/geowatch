@@ -1,0 +1,17 @@
+import { IsIn, IsOptional, IsString } from 'class-validator';
+
+const STATUS_VALUES = ['conflict', 'crisis', 'unstable', 'stable'] as const;
+
+export class ListCountriesQueryDto {
+  @IsOptional()
+  @IsIn(STATUS_VALUES)
+  status?: (typeof STATUS_VALUES)[number];
+
+  @IsOptional()
+  @IsString()
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+}

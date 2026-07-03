@@ -1,0 +1,229 @@
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+export type CountryStatus = 'conflict' | 'crisis' | 'unstable' | 'stable';
+
+export type EventCategory =
+  | 'military'
+  | 'economic'
+  | 'political'
+  | 'humanitarian';
+
+export type UserRole = 'superadmin' | 'editor' | 'viewer';
+
+export type SourceType = 'wire' | 'rss' | 'api' | 'scraper';
+
+export type EntityType = 'country' | 'event' | 'article';
+
+// ─────────────────────────────────────────────
+// Country
+// ─────────────────────────────────────────────
+
+export interface Country {
+  id: string; // ISO 3166-1 alpha-2
+  name: string;
+  flagEmoji: string | null;
+  region: string | null;
+  capital: string | null;
+  population: number | null;
+  gdpUsd: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: CountryStatus;
+  statusOverride: boolean;
+  riskScore: number;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface CountryWithDetails extends Country {
+  events: GeopoliticalEvent[];
+  recentArticles: Article[];
+  riskHistory: RiskScoreEntry[];
+}
+
+export interface RiskScoreEntry {
+  id: string;
+  countryId: string;
+  score: number;
+  breakdown: RiskBreakdown | null;
+  computedAt: string;
+}
+
+export interface RiskBreakdown {
+  military: number;
+  economic: number;
+  political: number;
+  humanitarian: number;
+}
+
+// ─────────────────────────────────────────────
+// Events
+// ─────────────────────────────────────────────
+
+export interface GeopoliticalEvent {
+  id: string;
+  countryId: string;
+  country?: Pick<Country, 'id' | 'name' | 'flagEmoji'>;
+  title: string;
+  description: string | null;
+  category: EventCategory;
+  severity: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  sourceUrl: string | null;
+  tags: string[];
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─────────────────────────────────────────────
+// News / Articles
+// ─────────────────────────────────────────────
+
+export interface Source {
+  id: string;
+  name: string;
+  type: SourceType | null;
+  url: string;
+  active: boolean;
+  fetchIntervalMinutes: number;
+  lastFetched: string | null;
+  articleCount: number;
+  createdAt: string;
+}
+
+export interface Article {
+  id: string;
+  sourceId?: string | null;
+  source?: Pick<Source, 'id' | 'name' | 'type'>;
+  countryId: string | null;
+  country?: Pick<Country, 'id' | 'name' | 'flagEmoji'> & { status?: CountryStatus };
+  url: string;
+  title: string;
+  body?: string | null;
+  publishedAt: string | null;
+  language?: string;
+  category: EventCategory | null;
+  tags: string[];
+  aiSummary: string | null;
+  aiSummaryApproved?: boolean;
+  sentimentScore: number | null;
+  fetchedAt?: string;
+  createdAt?: string;
+}
+
+// ─────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────
+
+export interface User {
+  id: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+  lastLogin: string | null;
+  createdAt: string;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+export interface JwtPayload {
+  sub: string;
+  email: string;
+  role: UserRole;
+  iat?: number;
+  exp?: number;
+}
+
+// ─────────────────────────────────────────────
+// API Responses
+// ─────────────────────────────────────────────
+
+export interface ApiResponse<T> {
+  data: T;
+  meta?: PaginationMeta;
+}
+
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface PaginationQuery {
+  page?: number;
+  limit?: number;
+}
+
+export interface HealthCheck {
+  status: 'ok' | 'error';
+  db: 'ok' | 'error';
+  redis: 'ok' | 'error';
+  version: string;
+  uptime: number;
+}
+
+// ─────────────────────────────────────────────
+// WebSocket Events
+// ─────────────────────────────────────────────
+
+export interface WsNewArticle {
+  type: 'new_article';
+  article: Article;
+}
+
+export interface WsRiskUpdate {
+  type: 'risk_update';
+  countryId: string;
+  riskScore: number;
+  status: CountryStatus;
+}
+
+export type WsEvent = WsNewArticle | WsRiskUpdate;
+
+// ─────────────────────────────────────────────
+// Status helpers
+// ─────────────────────────────────────────────
+
+export const STATUS_COLOR: Record<CountryStatus, string> = {
+  conflict: '#e84545',
+  crisis: '#f28c2a',
+  unstable: '#f5c542',
+  stable: '#3ecf8e',
+};
+
+export const STATUS_LABEL: Record<CountryStatus, string> = {
+  conflict: 'Active Conflict',
+  crisis: 'Economic Crisis',
+  unstable: 'Political Instability',
+  stable: 'Stable',
+};
+
+export const CATEGORY_LABEL: Record<EventCategory, string> = {
+  military: 'Military',
+  economic: 'Economic',
+  political: 'Political',
+  humanitarian: 'Humanitarian',
+};
+
+export const CATEGORY_COLOR: Record<EventCategory, string> = {
+  military: '#e84545', // same red as 'conflict' status — military news is the most alarming category
+  economic: '#f28c2a', // amber, matches 'crisis' status tone
+  political: '#4a9eff', // cool blue, distinct from the status palette — political news isn't inherently a danger signal
+  humanitarian: '#a78bfa', // violet — deliberately NOT the 'stable' green, since humanitarian news (displacement, aid shortages) is typically distressing, not reassuring
+};
+
+export function riskScoreToStatus(score: number): CountryStatus {
+  if (score >= 7.5) return 'conflict';
+  if (score >= 5.5) return 'crisis';
+  if (score >= 3.0) return 'unstable';
+  return 'stable';
+}
