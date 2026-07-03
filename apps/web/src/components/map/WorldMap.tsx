@@ -36,38 +36,128 @@ interface CountryFeature {
   properties: Record<string, unknown>;
 }
 
+// ── Antimeridian handling ─────────────────────────────────────────────
 // Features that cross the antimeridian (Russia, Fiji) have rings whose
 // longitudes jump from +180 to -180 mid-ring. Rendered naively, that jump
-// draws a fill band across the entire map. Unwrapping keeps each ring
-// continuous (letting longitudes exceed ±180), which MapLibre renders
-// correctly on the adjacent world copy.
-function unwrapRing(ring: number[][]): void {
+// draws a fill band across the entire map. We fix it in two steps:
+// 1. unwrap each ring so it's continuous (longitudes may exceed ±180),
+// 2. cut the polygon along the ±180 line into two pieces, shifting the
+//    overflowing piece back into [-180, 180].
+// The cut (instead of relying on world copies to render the overflow) is
+// what lets us run with renderWorldCopies: false — a single world with no
+// repeating continents.
+function unwrapRing(ring: number[][]): number[][] {
+  const out: number[][] = [ring[0]];
   for (let i = 1; i < ring.length; i++) {
-    const prevLon = ring[i - 1][0];
+    const prevLon = out[i - 1][0];
     let lon = ring[i][0];
     while (lon - prevLon > 180) lon -= 360;
     while (lon - prevLon < -180) lon += 360;
-    ring[i] = [lon, ring[i][1]];
+    out.push([lon, ring[i][1]]);
   }
+  return out;
 }
 
-function unwrapAntimeridian(geometry: {
-  type: string;
-  coordinates: unknown;
-}): void {
-  if (geometry.type === 'Polygon') {
-    for (const ring of geometry.coordinates as number[][][]) unwrapRing(ring);
-  } else if (geometry.type === 'MultiPolygon') {
-    for (const polygon of geometry.coordinates as number[][][][]) {
-      for (const ring of polygon) unwrapRing(ring);
+// Sutherland–Hodgman clip of a ring against the half-plane lon <= bound
+// (side = 'left') or lon >= bound (side = 'right').
+function clipRing(ring: number[][], bound: number, side: 'left' | 'right'): number[][] {
+  const inside = (p: number[]) => (side === 'left' ? p[0] <= bound : p[0] >= bound);
+  const intersect = (a: number[], b: number[]): number[] => {
+    const t = (bound - a[0]) / (b[0] - a[0]);
+    return [bound, a[1] + t * (b[1] - a[1])];
+  };
+  const out: number[][] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const cur = ring[i];
+    const prev = ring[(i - 1 + ring.length) % ring.length];
+    const curIn = inside(cur);
+    const prevIn = inside(prev);
+    if (curIn) {
+      if (!prevIn) out.push(intersect(prev, cur));
+      out.push(cur);
+    } else if (prevIn) {
+      out.push(intersect(prev, cur));
     }
   }
+  if (out.length >= 3) {
+    const first = out[0];
+    const last = out[out.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) out.push([...first]);
+  }
+  return out.length >= 4 ? out : [];
+}
+
+// Splits a Polygon/MultiPolygon at the antimeridian; returns MultiPolygon
+// coordinates entirely within [-180, 180].
+function cutAntimeridian(geometry: { type: string; coordinates: unknown }): void {
+  const polygons: number[][][][] =
+    geometry.type === 'Polygon'
+      ? [geometry.coordinates as number[][][]]
+      : geometry.type === 'MultiPolygon'
+        ? (geometry.coordinates as number[][][][])
+        : [];
+  if (polygons.length === 0) return;
+
+  const result: number[][][][] = [];
+  for (const polygon of polygons) {
+    const rings = polygon.map(unwrapRing);
+    const lons = rings.flatMap((r) => r.map((p) => p[0]));
+    const maxLon = Math.max(...lons);
+    const minLon = Math.min(...lons);
+
+    if (maxLon > 180) {
+      const left = rings.map((r) => clipRing(r, 180, 'left')).filter((r) => r.length > 0);
+      const right = rings
+        .map((r) => clipRing(r, 180, 'right').map((p) => [p[0] - 360, p[1]]))
+        .filter((r) => r.length > 0);
+      if (left.length) result.push(left);
+      if (right.length) result.push(right);
+    } else if (minLon < -180) {
+      const right = rings.map((r) => clipRing(r, -180, 'right')).filter((r) => r.length > 0);
+      const left = rings
+        .map((r) => clipRing(r, -180, 'left').map((p) => [p[0] + 360, p[1]]))
+        .filter((r) => r.length > 0);
+      if (right.length) result.push(right);
+      if (left.length) result.push(left);
+    } else {
+      result.push(rings);
+    }
+  }
+
+  geometry.type = 'MultiPolygon';
+  geometry.coordinates = result;
 }
 
 // Compact GDP label — "$178B" / "$2.0T".
 function formatGdpShort(usd: number): string {
   if (usd >= 1_000_000_000_000) return `$${(usd / 1_000_000_000_000).toFixed(1)}T`;
   return `$${Math.round(usd / 1_000_000_000)}B`;
+}
+
+// Compact population label — "36.7M" / "1.43B".
+function formatPopulationShort(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+// Population row for the hover popup: value plus an up/down arrow with the
+// change vs the previous year (green growth / red decline).
+function populationPopupHtml(country: Country): string {
+  if (country.population === null) return '';
+  let arrow = '';
+  if (country.populationYoyPct !== null) {
+    const up = country.populationYoyPct >= 0;
+    const color = up ? '#3ecf8e' : '#e84545';
+    arrow =
+      ` <span style="color:${color};">${up ? '▲' : '▼'} ` +
+      `${Math.abs(country.populationYoyPct).toFixed(1)}%</span>`;
+  }
+  return (
+    `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">` +
+    `${formatPopulationShort(country.population)}${arrow}</div>`
+  );
 }
 
 // Minimal MapLibre style: a transparent background and an empty GeoJSON
@@ -152,7 +242,13 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       minZoom: 1,
       maxZoom: 8,
       attributionControl: false,
-      renderWorldCopies: true,
+      // Single world — no repeating continents. The geometry is cut at the
+      // antimeridian (see cutAntimeridian) so nothing depends on copies.
+      renderWorldCopies: false,
+      maxBounds: [
+        [-180, -85],
+        [180, 85],
+      ],
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
@@ -273,7 +369,7 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
             // every country with a numeric code < 100 actually matches.
             const rawId = String(f.id ?? '');
             f.properties[ISO_N3] = /^-?\d+$/.test(rawId) ? String(parseInt(rawId, 10)) : rawId;
-            unwrapAntimeridian(f.geometry as { type: string; coordinates: unknown });
+            cutAntimeridian(f.geometry as { type: string; coordinates: unknown });
           }
           const src = map.getSource('world') as maplibregl.GeoJSONSource | undefined;
           src?.setData(fc as unknown as GeoJSON.FeatureCollection);
@@ -315,7 +411,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
         const html =
           `<div style="font:600 12px -apple-system,system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
-          `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>`;
+          `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
+          populationPopupHtml(country);
         if (!popupRef.current) {
           popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         }

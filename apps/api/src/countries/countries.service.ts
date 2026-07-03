@@ -38,9 +38,46 @@ export class CountriesService {
       orderBy: { riskScore: 'desc' },
     });
 
-    const serialized = countries.map((c) => this.serializeCountry(c));
+    const yoyByCountry = await this.populationYoyPct(countries.map((c) => c.id));
+    const serialized = countries.map((c) =>
+      this.serializeCountry(c, yoyByCountry.get(c.id) ?? null),
+    );
     await this.redis.set(cacheKey, serialized, CACHE_TTL_LIST_SECONDS);
     return serialized;
+  }
+
+  /**
+   * Population change vs the previous year, in percent, from the two most
+   * recent population_history entries per country. Feeds the map hover
+   * popup's up/down arrow.
+   */
+  private async populationYoyPct(
+    countryIds: string[],
+  ): Promise<Map<string, number>> {
+    if (countryIds.length === 0) return new Map();
+    const rows = await this.prisma.populationHistory.findMany({
+      where: { countryId: { in: countryIds } },
+      orderBy: { year: 'desc' },
+      select: { countryId: true, year: true, population: true },
+    });
+    const latestTwo = new Map<string, { year: number; population: bigint }[]>();
+    for (const row of rows) {
+      const list = latestTwo.get(row.countryId) ?? [];
+      if (list.length < 2) {
+        list.push({ year: row.year, population: row.population });
+        latestTwo.set(row.countryId, list);
+      }
+    }
+    const result = new Map<string, number>();
+    for (const [countryId, list] of latestTwo) {
+      if (list.length < 2) continue;
+      const [latest, prev] = list;
+      if (prev.population <= 0n || latest.year - prev.year !== 1) continue;
+      const pct =
+        (Number(latest.population - prev.population) / Number(prev.population)) * 100;
+      result.set(countryId, Math.round(pct * 100) / 100);
+    }
+    return result;
   }
 
   async findOne(id: string) {
@@ -68,8 +105,9 @@ export class CountriesService {
       throw new NotFoundException(`Country with id "${id}" not found`);
     }
 
+    const yoyByCountry = await this.populationYoyPct([country.id]);
     const result = {
-      ...this.serializeCountry(country),
+      ...this.serializeCountry(country, yoyByCountry.get(country.id) ?? null),
       events: country.events.map((e) => this.serializeEvent(e)),
       recentArticles: country.articles.map((a) => this.serializeArticle(a)),
     };
@@ -143,22 +181,25 @@ export class CountriesService {
   // Prisma returns Decimal/BigInt types that don't serialize to JSON
   // cleanly, so we convert them to plain numbers/strings for API responses.
 
-  private serializeCountry(c: {
-    id: string;
-    name: string;
-    flagEmoji: string | null;
-    region: string | null;
-    capital: string | null;
-    population: bigint | null;
-    gdpUsd: bigint | null;
-    latitude: Prisma.Decimal | null;
-    longitude: Prisma.Decimal | null;
-    status: string;
-    statusOverride: boolean;
-    riskScore: Prisma.Decimal;
-    updatedAt: Date;
-    createdAt: Date;
-  }) {
+  private serializeCountry(
+    c: {
+      id: string;
+      name: string;
+      flagEmoji: string | null;
+      region: string | null;
+      capital: string | null;
+      population: bigint | null;
+      gdpUsd: bigint | null;
+      latitude: Prisma.Decimal | null;
+      longitude: Prisma.Decimal | null;
+      status: string;
+      statusOverride: boolean;
+      riskScore: Prisma.Decimal;
+      updatedAt: Date;
+      createdAt: Date;
+    },
+    populationYoyPct: number | null = null,
+  ) {
     return {
       id: c.id,
       name: c.name,
@@ -166,6 +207,7 @@ export class CountriesService {
       region: c.region,
       capital: c.capital,
       population: c.population ? Number(c.population) : null,
+      populationYoyPct,
       gdpUsd: c.gdpUsd ? Number(c.gdpUsd) : null,
       latitude: c.latitude ? Number(c.latitude) : null,
       longitude: c.longitude ? Number(c.longitude) : null,

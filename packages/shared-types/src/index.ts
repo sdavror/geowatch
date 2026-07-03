@@ -27,6 +27,8 @@ export interface Country {
   region: string | null;
   capital: string | null;
   population: number | null;
+  // Population change vs the previous year, percent (World Bank data).
+  populationYoyPct: number | null;
   gdpUsd: number | null;
   latitude: number | null;
   longitude: number | null;

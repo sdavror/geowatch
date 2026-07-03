@@ -66,6 +66,15 @@ export function RegionFilterPanel({
       <div>
         <div className="mb-1.5 px-1 text-[9px] tracking-wide text-text-tertiary">STATUS</div>
         <div className="flex flex-col gap-0.5">
+          <button
+            onClick={() => onSelectStatus(null)}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors ${
+              statusFilter === null ? 'bg-bg-3' : 'hover:bg-bg-3/50'
+            }`}
+          >
+            <span className="flex-1 truncate text-[10px] text-text-secondary">All</span>
+            <span className="text-[10px] text-text-tertiary">{countries.length}</span>
+          </button>
           {STATUS_ORDER.map((status) => (
             <button
               key={status}
