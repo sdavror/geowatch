@@ -201,6 +201,17 @@ export const NUMERIC_TO_ALPHA2: Record<string, string> = {
   '780': 'TT', // Trinidad and Tobago
   '858': 'UY', // Uruguay
 
+  // Territories & partially recognised states present in the 110m dataset.
+  // Kosovo uses '-2' — the dataset assigns negative ids to features without
+  // an ISO numeric code (-1 N. Cyprus, -2 Kosovo, -3 Somaliland); we map
+  // only Kosovo (user-assigned alpha-2 XK), the others stay untracked.
+  '304': 'GL', // Greenland
+  '-2': 'XK', // Kosovo
+  '630': 'PR', // Puerto Rico
+  '540': 'NC', // New Caledonia
+  '238': 'FK', // Falkland Islands
+  '732': 'EH', // Western Sahara
+
   // Oceania
   '36': 'AU', // Australia
   '242': 'FJ', // Fiji

@@ -240,6 +240,18 @@ const AMERICAS_COUNTRIES: UntrackedCountry[] = [
   { id: 'UY', name: 'Uruguay', flagEmoji: '🇺🇾', region: 'South America', capital: 'Montevideo', population: 3_400_000n, gdpUsd: 77_000_000_000n, latitude: -33.0, longitude: -56.0 },
 ];
 
+// ── Territories & partially recognised states ───────────────────
+// Present as separate features in the map geometry, so they need DB rows
+// to render with a status colour instead of the untracked-land silhouette.
+const TERRITORIES: UntrackedCountry[] = [
+  { id: 'GL', name: 'Greenland', flagEmoji: '🇬🇱', region: 'North America', capital: 'Nuuk', population: 57_000n, gdpUsd: 3_200_000_000n, latitude: 72.0, longitude: -40.0 },
+  { id: 'XK', name: 'Kosovo', flagEmoji: '🇽🇰', region: 'Southern Europe', capital: 'Pristina', population: 1_660_000n, gdpUsd: 10_000_000_000n, latitude: 42.6, longitude: 20.9 },
+  { id: 'PR', name: 'Puerto Rico', flagEmoji: '🇵🇷', region: 'Caribbean', capital: 'San Juan', population: 3_200_000n, gdpUsd: 113_000_000_000n, latitude: 18.2, longitude: -66.4 },
+  { id: 'NC', name: 'New Caledonia', flagEmoji: '🇳🇨', region: 'Oceania', capital: 'Nouméa', population: 270_000n, gdpUsd: 9_600_000_000n, latitude: -21.5, longitude: 165.5 },
+  { id: 'FK', name: 'Falkland Islands', flagEmoji: '🇫🇰', region: 'South America', capital: 'Stanley', population: 3_700n, gdpUsd: 200_000_000n, latitude: -51.75, longitude: -59.0 },
+  { id: 'EH', name: 'Western Sahara', flagEmoji: '🇪🇭', region: 'North Africa', capital: 'Laayoune', population: 590_000n, gdpUsd: 1_000_000_000n, latitude: 24.5, longitude: -13.0 },
+];
+
 // ── Oceania ──────────────────────────────────────────────────────
 const OCEANIA_COUNTRIES: UntrackedCountry[] = [
   { id: 'AU', name: 'Australia', flagEmoji: '🇦🇺', region: 'Oceania', capital: 'Canberra', population: 26_600_000n, gdpUsd: 1_728_000_000_000n, latitude: -25.0, longitude: 133.0 },
@@ -477,6 +489,7 @@ async function main() {
     { label: 'Asia', countries: ASIA_COUNTRIES },
     { label: 'Americas', countries: AMERICAS_COUNTRIES },
     { label: 'Oceania', countries: OCEANIA_COUNTRIES },
+    { label: 'Territories', countries: TERRITORIES },
   ];
   for (const { label, countries } of REMAINING_REGIONS) {
     console.log(`🌍 Seeding additional countries (${label})...`);
@@ -534,11 +547,17 @@ async function main() {
     const publishedAt = new Date();
     publishedAt.setTime(publishedAt.getTime() - a.hoursAgo * 60 * 60 * 1000);
 
+    // Articles carry a unique url; skip ones that already exist so the seed
+    // can be re-run without tripping the unique constraint.
+    const url = `https://example.com/mock-articles/${a.countryId.toLowerCase()}-${createdEvents[a.eventIndex]?.id ?? a.eventIndex}`;
+    const existing = await prisma.article.findUnique({ where: { url } });
+    if (existing) continue;
+
     const article = await prisma.article.create({
       data: {
         sourceId: '00000000-0000-0000-0000-000000000001',
         countryId: a.countryId,
-        url: `https://example.com/mock-articles/${a.countryId.toLowerCase()}-${createdEvents[a.eventIndex]?.id ?? a.eventIndex}`,
+        url,
         title: a.title,
         body: a.body,
         publishedAt,
