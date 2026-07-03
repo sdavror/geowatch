@@ -9,6 +9,11 @@ export class GdpController {
   getGdpHistory(@Param('id') id: string) {
     return this.gdpService.getGdpHistory(id);
   }
+
+  @Get(':id/population-history')
+  getPopulationHistory(@Param('id') id: string) {
+    return this.gdpService.getPopulationHistory(id);
+  }
 }
 
 /**

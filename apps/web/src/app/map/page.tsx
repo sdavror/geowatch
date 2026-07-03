@@ -11,6 +11,7 @@ import { RegionFilterPanel } from '@/components/sidebar/RegionFilterPanel';
 import { CountrySidebar } from '@/components/sidebar/CountrySidebar';
 import { StatusBadge } from '@/components/sidebar/StatusBadge';
 import { GdpIndicator } from '@/components/sidebar/GdpIndicator';
+import { PopulationIndicator } from '@/components/sidebar/PopulationIndicator';
 import { STATUS_COLOR, STATUS_LABEL } from '@geowatch/shared-types';
 import type { CountryStatus } from '@geowatch/shared-types';
 
@@ -147,7 +148,8 @@ export default function MapPage() {
                   </div>
                 </div>
               </div>
-              <div className="mt-3 border-t border-border/10 pt-2.5">
+              <div className="mt-3 flex flex-col gap-2 border-t border-border/10 pt-2.5">
+                <PopulationIndicator countryId={selectedCountry.id} />
                 <GdpIndicator gdpUsd={selectedCountry.gdpUsd} />
               </div>
             </div>

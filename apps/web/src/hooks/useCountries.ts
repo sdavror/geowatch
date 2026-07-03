@@ -2,7 +2,12 @@
 
 import useSWR from 'swr';
 import { fetcher } from '@/lib/api';
-import type { Country, CountryWithDetails, RiskScoreEntry } from '@geowatch/shared-types';
+import type {
+  Country,
+  CountryWithDetails,
+  PopulationHistoryEntry,
+  RiskScoreEntry,
+} from '@geowatch/shared-types';
 
 export function useCountries(filters?: { status?: string; region?: string; search?: string }) {
   const params = new URLSearchParams();
@@ -32,6 +37,19 @@ export function useCountry(id: string | null) {
 
   return {
     country: data,
+    isLoading,
+    isError: !!error,
+  };
+}
+
+export function usePopulationHistory(id: string | null) {
+  const { data, error, isLoading } = useSWR<PopulationHistoryEntry[]>(
+    id ? `/countries/${id}/population-history` : null,
+    fetcher,
+  );
+
+  return {
+    history: data ?? [],
     isLoading,
     isError: !!error,
   };

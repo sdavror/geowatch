@@ -58,12 +58,22 @@ export interface RiskBreakdown {
   humanitarian: number;
 }
 
-// Annual GDP data point (current US$), parsed from the World Bank API.
+// Annual GDP data point, parsed from the World Bank API.
+// gdpUsd — current US$; gdpConstUsd — constant 2015 US$ (real GDP).
 // Served by GET /countries/:id/gdp-history.
 export interface GdpHistoryEntry {
   countryId: string;
   year: number;
   gdpUsd: number;
+  gdpConstUsd: number | null;
+}
+
+// Annual population data point (World Bank SP.POP.TOTL).
+// Served by GET /countries/:id/population-history.
+export interface PopulationHistoryEntry {
+  countryId: string;
+  year: number;
+  population: number;
 }
 
 // ─────────────────────────────────────────────

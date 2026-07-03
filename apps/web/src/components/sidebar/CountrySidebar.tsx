@@ -4,6 +4,8 @@ import { useCountry } from '@/hooks/useCountries';
 import { StatusBadge } from './StatusBadge';
 import { RiskScoreBar } from './RiskScoreBar';
 import { EventTimeline } from './EventTimeline';
+import { GdpIndicator } from './GdpIndicator';
+import { PopulationIndicator } from './PopulationIndicator';
 
 interface CountrySidebarProps {
   countryId: string | null;
@@ -72,6 +74,11 @@ export function CountrySidebar({ countryId, onClose }: CountrySidebarProps) {
                 <div className="text-lg font-bold">{country.events.length}</div>
                 <div className="text-[10px] text-text-tertiary">Recent Events</div>
               </div>
+            </div>
+
+            <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border/10 bg-bg-3 p-2.5">
+              <PopulationIndicator countryId={country.id} />
+              <GdpIndicator gdpUsd={country.gdpUsd} />
             </div>
 
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
