@@ -52,7 +52,7 @@ export default function MapPage() {
   return (
     <main className="flex h-screen flex-col bg-bg">
       {/* Header */}
-      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-border/10 bg-bg-2 px-4">
+      <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-border/10 bg-bg-2/70 px-4 backdrop-blur-xl">
         <div className="flex items-center gap-2 text-sm font-semibold tracking-wide">
           <span className="h-2 w-2 animate-pulse rounded-full bg-status-conflict" />
           GEOWATCH
@@ -68,7 +68,7 @@ export default function MapPage() {
             value={search}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             placeholder="Search countries..."
-            className="w-40 rounded-md border border-border/10 bg-bg-3 px-2.5 py-1 text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
+            className="w-40 rounded-full border border-border/10 bg-bg-3/60 px-3 py-1 text-xs text-text-primary backdrop-blur-md transition-all placeholder:text-text-tertiary focus:w-52 focus:border-accent-blue focus:outline-none"
           />
           <ThemeToggle />
         </div>
@@ -114,10 +114,10 @@ export default function MapPage() {
               <button
                 key={status}
                 onClick={() => setStatusFilter(statusFilter === status ? null : status)}
-                className="min-w-[110px] rounded-lg border px-3 py-2 text-left backdrop-blur-sm transition-colors"
+                className="min-w-[110px] rounded-2xl border px-3 py-2 text-left shadow-lg backdrop-blur-xl transition-all hover:scale-[1.03]"
                 style={{
                   backgroundColor:
-                    statusFilter === status ? `${STATUS_COLOR[status]}22` : 'rgba(17,20,24,0.9)',
+                    statusFilter === status ? `${STATUS_COLOR[status]}22` : 'rgba(17,20,24,0.55)',
                   borderColor:
                     statusFilter === status ? STATUS_COLOR[status] : 'rgba(255,255,255,0.1)',
                 }}
@@ -133,7 +133,7 @@ export default function MapPage() {
           {/* Compact floating country card — quick glance before opening the
               full detail sidebar, mirrors the reference dashboard's bottom-left card. */}
           {selectedCountry && (
-            <div className="absolute bottom-4 left-4 z-10 w-64 rounded-lg border border-border/10 bg-bg-2/95 p-3 backdrop-blur-sm">
+            <div className="absolute bottom-4 left-4 z-10 w-64 rounded-2xl border border-border/10 bg-bg-2/60 p-3.5 shadow-2xl backdrop-blur-2xl">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">{selectedCountry.flagEmoji}</span>
                 <div className="min-w-0 flex-1">

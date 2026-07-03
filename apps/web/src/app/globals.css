@@ -80,3 +80,59 @@ body {
   0%   { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
 }
+
+/* ── Map: Apple-style ocean & chrome ──────────────────────────────
+   The ocean backdrop is a theme-token gradient; in dark mode an ambient
+   AI-generated texture (Canva, public/ocean-texture.jpg) is layered
+   beneath a translucent tint for organic depth — like Apple Maps' dark
+   water. Light theme keeps the plain gradient. */
+.map-ocean {
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgb(var(--color-map-ocean-1)) 0%,
+    rgb(var(--color-map-ocean-2)) 100%
+  );
+}
+html:not(.light) .map-ocean {
+  background:
+    linear-gradient(
+      rgb(var(--color-map-ocean-1) / 0.35),
+      rgb(var(--color-map-ocean-2) / 0.5)
+    ),
+    url('/ocean-texture.jpg') center / cover no-repeat;
+}
+
+/* Frosted-glass hover popup instead of MapLibre's default white bubble. */
+.maplibregl-popup-content {
+  background: rgb(var(--color-bg-2) / 0.72) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgb(var(--color-border) / 0.12);
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.35) !important;
+  padding: 8px 12px !important;
+}
+.maplibregl-popup-tip {
+  display: none;
+}
+
+/* Frosted-glass zoom controls. */
+.maplibregl-ctrl-group {
+  background: rgb(var(--color-bg-2) / 0.6) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgb(var(--color-border) / 0.12);
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3) !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgb(var(--color-border) / 0.08) !important;
+}
+/* MapLibre's +/- glyphs are dark SVGs; soften-invert them on dark theme. */
+html:not(.light) .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1) opacity(0.85);
+}

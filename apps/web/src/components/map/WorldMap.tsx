@@ -133,6 +133,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
   const loadedRef = useRef(false);
   const dataReadyRef = useRef(false);
   const popupRef = useRef<InstanceType<typeof maplibregl.Popup> | null>(null);
+  const pulseFrameRef = useRef<number | null>(null);
+  const hoveredIsoRef = useRef<string | null>(null);
   const countriesRef = useRef(countries);
   const onSelectRef = useRef(onSelectCountry);
   countriesRef.current = countries;
@@ -180,6 +182,25 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         paint: { 'line-color': '#343b48', 'line-width': 0.5 },
       });
 
+      // Subtle hover brightening — the country under the cursor lifts,
+      // Apple-style. Driven by a filter swap on mousemove; the opacity
+      // transition makes it fade in/out instead of snapping.
+      map.addLayer({
+        id: 'countries-hover',
+        type: 'fill',
+        source: 'world',
+        filter: ['==', ['get', ISO_N3], '___none___'],
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.08,
+        },
+      });
+      // Fade the hover fill in/out instead of snapping. Transitions aren't
+      // part of the addLayer paint typing, so set it separately.
+      map.setPaintProperty('countries-hover', 'fill-opacity-transition', {
+        duration: 150,
+      } as never);
+
       // Neon conflict glow: wide soft halo + thin bright core.
       const glow = [
         { id: 'conflict-glow-outer', color: '#ff3b3b', width: 12, opacity: 0.25, blur: 4 },
@@ -206,14 +227,37 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         });
       }
 
-      // Selected-country white outline.
+      // Selected country: soft white halo + thin crisp core — reads like
+      // a focus ring rather than a hard cartographic border.
+      map.addLayer({
+        id: 'selected-halo',
+        type: 'line',
+        source: 'world',
+        filter: ['==', ['get', ISO_N3], '___none___'],
+        paint: { 'line-color': '#ffffff', 'line-width': 8, 'line-opacity': 0.25, 'line-blur': 6 },
+      });
       map.addLayer({
         id: 'selected-outline',
         type: 'line',
         source: 'world',
         filter: ['==', ['get', ISO_N3], '___none___'],
-        paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-opacity': 0.95 },
+        paint: { 'line-color': '#ffffff', 'line-width': 1.5, 'line-opacity': 0.9 },
       });
+
+      // Gentle breathing pulse on the conflict glow (~4s cycle). Restrained
+      // amplitude on purpose — it should read as "alive", not as blinking.
+      const pulseStart = performance.now();
+      const pulse = (now: number) => {
+        const k = (Math.sin(((now - pulseStart) / 4000) * Math.PI * 2) + 1) / 2;
+        if (map.getLayer('conflict-glow-outer')) {
+          map.setPaintProperty('conflict-glow-outer', 'line-opacity', 0.15 + 0.2 * k);
+        }
+        if (map.getLayer('conflict-glow-mid')) {
+          map.setPaintProperty('conflict-glow-mid', 'line-opacity', 0.3 + 0.25 * k);
+        }
+        pulseFrameRef.current = requestAnimationFrame(pulse);
+      };
+      pulseFrameRef.current = requestAnimationFrame(pulse);
 
       // Load world geometry, copy numeric id into properties, feed the source.
       fetch(GEO_URL)
@@ -248,21 +292,32 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       map.on('mouseleave', 'countries-fill', () => {
         map.getCanvas().style.cursor = '';
         popupRef.current?.remove();
+        hoveredIsoRef.current = null;
+        if (map.getLayer('countries-hover')) {
+          map.setFilter('countries-hover', ['==', ['get', ISO_N3], '___none___']);
+        }
       });
       map.on('mousemove', 'countries-fill', (e: MapLayerMouseEvent) => {
         const num = e.features?.[0]?.properties?.[ISO_N3] as string | undefined;
         const a2 = num ? NUMERIC_TO_ALPHA2[num] : undefined;
         const country = a2 ? countriesRef.current.find((c) => c.id === a2) : undefined;
+
+        const hoverTarget = country && num ? num : '___none___';
+        if (hoveredIsoRef.current !== hoverTarget && map.getLayer('countries-hover')) {
+          hoveredIsoRef.current = hoverTarget;
+          map.setFilter('countries-hover', ['==', ['get', ISO_N3], hoverTarget]);
+        }
+
         if (!country) {
           popupRef.current?.remove();
           return;
         }
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
         const html =
-          `<div style="font:600 12px system-ui;color:#fff;">${country.name}</div>` +
-          `<div style="font:11px system-ui;color:#9aa3b2;">${country.status}${gdp}</div>`;
+          `<div style="font:600 12px -apple-system,system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
+          `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>`;
         if (!popupRef.current) {
-          popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+          popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         }
         popupRef.current.setLngLat(e.lngLat).setHTML(html).addTo(map);
       });
@@ -274,6 +329,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
     });
 
     return () => {
+      if (pulseFrameRef.current !== null) cancelAnimationFrame(pulseFrameRef.current);
+      pulseFrameRef.current = null;
       popupRef.current?.remove();
       popupRef.current = null;
       map.remove();
@@ -298,31 +355,36 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
     }
   }, [countries]);
 
-  // Update selected outline.
+  // Update selected outline + glide the camera to the chosen country.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     applySelected(map, selectedCountryId);
+
+    if (selectedCountryId) {
+      const country = countriesRef.current.find((c) => c.id === selectedCountryId);
+      if (country && country.latitude !== null && country.longitude !== null) {
+        map.flyTo({
+          center: [country.longitude, country.latitude],
+          zoom: Math.max(map.getZoom(), 2.6),
+          duration: 1400,
+          curve: 1.6,
+          essential: true,
+        });
+      }
+    }
   }, [selectedCountryId]);
 
   return (
-    <div
-      className="relative h-full w-full"
-      style={{
-        // Ocean: navy water tokens (--color-map-ocean-*), subtly vignetted
-        // toward the edges. Painted here in CSS (not in the MapLibre style)
-        // so it stays theme-aware via the CSS variables.
-        background:
-          'radial-gradient(ellipse at 50% 40%, rgb(var(--color-map-ocean-1)) 0%, rgb(var(--color-map-ocean-2)) 100%)',
-      }}
-    >
+    // Ocean backdrop lives in the .map-ocean CSS class (theme-aware
+    // gradient + ambient texture in dark mode) — see globals.css.
+    <div className="map-ocean relative h-full w-full">
       <div ref={mapContainer} className="absolute inset-0 h-full w-full" />
     </div>
   );
 }
 
 function applySelected(map: InstanceType<typeof maplibregl.Map>, selectedId: string | null) {
-  if (!map.getLayer('selected-outline')) return;
   let num = '___none___';
   if (selectedId) {
     for (const [n, a2] of Object.entries(NUMERIC_TO_ALPHA2)) {
@@ -332,5 +394,9 @@ function applySelected(map: InstanceType<typeof maplibregl.Map>, selectedId: str
       }
     }
   }
-  map.setFilter('selected-outline', ['==', ['get', ISO_N3], num]);
+  for (const layerId of ['selected-outline', 'selected-halo']) {
+    if (map.getLayer(layerId)) {
+      map.setFilter(layerId, ['==', ['get', ISO_N3], num]);
+    }
+  }
 }
