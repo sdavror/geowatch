@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+.turbo
+*.env
+!*.env.example
+.env.local
+.env.*.local
+prisma/generated
+coverage
+.DS_Store
+*.log

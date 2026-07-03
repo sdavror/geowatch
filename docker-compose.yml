@@ -1,0 +1,94 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: geowatch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: geowatch
+      POSTGRES_USER: geowatch
+      POSTGRES_PASSWORD: geowatch_dev_password
+    ports:
+      - '5432:5432'
+    volumes:
+      - geowatch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U geowatch -d geowatch']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - geowatch-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: geowatch-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - geowatch_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - geowatch-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: geowatch-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      DATABASE_URL: postgresql://geowatch:geowatch_dev_password@postgres:5432/geowatch?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev_only_change_me_jwt_secret_please}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_only_change_me_refresh_secret_please}
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-ChangeMe123!}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+    ports:
+      - '4000:4000'
+    networks:
+      - geowatch-net
+    command: >
+      sh -c "
+        npx prisma migrate deploy &&
+        node dist/main.js
+      "
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api
+        NEXT_PUBLIC_WS_URL: ws://localhost:4000
+    container_name: geowatch-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '3000:3000'
+    networks:
+      - geowatch-net
+
+volumes:
+  geowatch_pgdata:
+  geowatch_redisdata:
+
+networks:
+  geowatch-net:
+    driver: bridge
