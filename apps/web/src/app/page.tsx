@@ -8,6 +8,7 @@ import { CategoryNav } from '@/components/articles/CategoryNav';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
 import { CategorySection } from '@/components/articles/CategorySection';
+import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 
@@ -49,6 +50,10 @@ export default function HomePage() {
 
   return (
     <main className="flex h-screen flex-col bg-bg">
+      <NewsListJsonLd articles={articles} />
+      {/* Single visible-to-crawlers h1 for the page. Kept off-screen so it
+          doesn't duplicate the compact wordmark in the header. */}
+      <h1 className="sr-only">GeoWatch — Global geopolitical intelligence</h1>
       <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
         <span className="text-[15px] font-semibold tracking-wide text-text-primary">GeoWatch</span>
         <CategoryNav active={category} onSelect={handleSelectCategory} />
@@ -81,14 +86,20 @@ export default function HomePage() {
             </p>
           )}
 
-          {visibleCategories.map((cat) => (
-            <CategorySection
-              key={cat}
-              category={cat}
-              articles={articlesByCategory(cat)}
-              onOpenArticle={openArticle}
-            />
-          ))}
+          {/* World view arranges the blocks two-up on wide screens (more
+              headlines above the fold); a single selected category spans
+              the full width. Collapses to one column on tablet/mobile. */}
+          <div className={category ? '' : 'grid grid-cols-1 gap-x-6 lg:grid-cols-2'}>
+            {visibleCategories.map((cat) => (
+              <CategorySection
+                key={cat}
+                category={cat}
+                articles={articlesByCategory(cat)}
+                onOpenArticle={openArticle}
+                layout={category ? 'full' : 'grid'}
+              />
+            ))}
+          </div>
         </div>
 
         <RiskSidebar

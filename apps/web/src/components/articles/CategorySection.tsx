@@ -9,6 +9,9 @@ interface CategorySectionProps {
   category: EventCategory;
   articles: Article[];
   onOpenArticle: (article: Article) => void;
+  // 'grid' = block sits in a half-width column (blocks arranged two-up), so
+  // its cards stay single-column; 'full' = block spans the whole feed.
+  layout?: 'full' | 'grid';
 }
 
 /**
@@ -16,11 +19,20 @@ interface CategorySectionProps {
  * story (newest article, with its AI summary), then the rest of the
  * category's stories in a compact grid.
  */
-export function CategorySection({ category, articles, onOpenArticle }: CategorySectionProps) {
+export function CategorySection({
+  category,
+  articles,
+  onOpenArticle,
+  layout = 'full',
+}: CategorySectionProps) {
   if (articles.length === 0) return null;
 
   const color = CATEGORY_COLOR[category];
   const [featured, ...rest] = articles;
+  const restGridClass =
+    layout === 'grid'
+      ? 'grid grid-cols-1 gap-1'
+      : 'grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3';
 
   return (
     <section className="mb-8">
@@ -52,14 +64,18 @@ export function CategorySection({ category, articles, onOpenArticle }: CategoryS
             </p>
           )}
           <div className="mt-1 text-[10px] text-text-tertiary">
-            {formatRelativeTime(featured.publishedAt)}
+            {featured.publishedAt && (
+              <time dateTime={featured.publishedAt}>
+                {formatRelativeTime(featured.publishedAt)}
+              </time>
+            )}
             {featured.country?.name && ` · ${featured.country.name}`}
           </div>
         </div>
       </button>
 
       {rest.length > 0 && (
-        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+        <div className={restGridClass}>
           {rest.map((a) => (
             <ArticleCard key={a.id} article={a} onSelect={() => onOpenArticle(a)} />
           ))}

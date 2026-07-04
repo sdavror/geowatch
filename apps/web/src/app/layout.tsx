@@ -6,6 +6,19 @@ export const metadata: Metadata = {
   title: 'GeoWatch — Global Intelligence Platform',
   description:
     'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+  openGraph: {
+    title: 'GeoWatch — Global Intelligence Platform',
+    description:
+      'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+    type: 'website',
+    siteName: 'GeoWatch',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'GeoWatch — Global Intelligence Platform',
+    description:
+      'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+  },
 };
 
 export default function RootLayout({

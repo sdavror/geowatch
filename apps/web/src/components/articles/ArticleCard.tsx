@@ -31,7 +31,11 @@ export function ArticleCard({ article, onSelect }: ArticleCardProps) {
           {article.title}
         </div>
         <div className="mt-1 text-[10px] text-text-tertiary">
-          {formatRelativeTime(article.publishedAt)}
+          {article.publishedAt && (
+            <time dateTime={article.publishedAt}>
+              {formatRelativeTime(article.publishedAt)}
+            </time>
+          )}
         </div>
       </div>
     </button>
