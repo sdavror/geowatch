@@ -1,5 +1,8 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { GdpService } from './gdp.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('countries')
 export class GdpController {
@@ -21,6 +24,8 @@ export class GdpController {
  * AdminCountriesController. Stage 3 adds JWT auth + RolesGuard.
  */
 @Controller('admin/gdp')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('editor') // superadmin passes via RolesGuard's owner bypass
 export class AdminGdpController {
   constructor(private readonly gdpService: GdpService) {}
 

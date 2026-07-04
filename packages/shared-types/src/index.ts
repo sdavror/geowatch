@@ -131,6 +131,8 @@ export interface Article {
   aiSummary: string | null;
   aiSummaryApproved?: boolean;
   sentimentScore: number | null;
+  imageUrl?: string | null;
+  published?: boolean;
   fetchedAt?: string;
   createdAt?: string;
 }
@@ -152,6 +154,25 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+}
+
+// Returned by POST /auth/login and /auth/register.
+export interface AuthResponse extends AuthTokens {
+  user: {
+    id: string;
+    email: string;
+    role: UserRole;
+  };
+}
+
+// Returned by GET /auth/me and admin user listing.
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+  lastLogin: string | null;
+  createdAt: string;
 }
 
 export interface JwtPayload {

@@ -564,6 +564,7 @@ async function main() {
         category: a.category,
         aiSummary: a.aiSummary,
         aiSummaryApproved: true,
+        published: true,
         sentimentScore: a.sentimentScore,
         tags: [],
       },

@@ -20,7 +20,7 @@ export class ArticlesService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return cached;
 
-    const where: Prisma.ArticleWhereInput = { aiSummaryApproved: true };
+    const where: Prisma.ArticleWhereInput = { published: true };
     if (query.category) where.category = query.category;
     if (query.countryId) where.countryId = query.countryId.toUpperCase();
 
@@ -34,6 +34,104 @@ export class ArticlesService {
     const serialized = articles.map((a) => this.serializeArticle(a));
     await this.redis.set(cacheKey, serialized, CACHE_TTL_LIST_SECONDS);
     return serialized;
+  }
+
+  // ── Admin CRUD ─────────────────────────────────────────────
+  // Editors and the owner manage the news catalogue here. The admin list
+  // shows drafts too (unlike the public feed, which is published-only).
+
+  async findAllAdmin() {
+    const articles = await this.prisma.article.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { country: true },
+    });
+    return articles.map((a) => this.serializeArticle(a, true));
+  }
+
+  async create(input: {
+    title: string;
+    body?: string | null;
+    aiSummary?: string | null;
+    category?: string | null;
+    countryId?: string | null;
+    imageUrl?: string | null;
+    published?: boolean;
+    authorId: string;
+  }) {
+    const article = await this.prisma.article.create({
+      data: {
+        title: input.title,
+        body: input.body ?? null,
+        aiSummary: input.aiSummary ?? null,
+        category: (input.category as never) ?? null,
+        countryId: input.countryId ? input.countryId.toUpperCase() : null,
+        imageUrl: input.imageUrl ?? null,
+        published: input.published ?? false,
+        authorId: input.authorId,
+        // Editor-authored posts are inherently curated, so the AI-summary
+        // approval flag rides along with the publish state.
+        aiSummaryApproved: input.published ?? false,
+        // Manually created articles still need a unique url; synthesise one.
+        url: `geowatch://article/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        publishedAt: input.published ? new Date() : null,
+        tags: [],
+      },
+      include: { country: true },
+    });
+    await this.invalidate();
+    return this.serializeArticle(article, true);
+  }
+
+  async update(
+    id: string,
+    input: {
+      title?: string;
+      body?: string | null;
+      aiSummary?: string | null;
+      category?: string | null;
+      countryId?: string | null;
+      imageUrl?: string | null;
+      published?: boolean;
+    },
+  ) {
+    const existing = await this.prisma.article.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Article "${id}" not found`);
+
+    const goingLive = input.published === true && !existing.published;
+    const article = await this.prisma.article.update({
+      where: { id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        ...(input.aiSummary !== undefined ? { aiSummary: input.aiSummary } : {}),
+        ...(input.category !== undefined ? { category: input.category as never } : {}),
+        ...(input.countryId !== undefined
+          ? { countryId: input.countryId ? input.countryId.toUpperCase() : null }
+          : {}),
+        ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        ...(input.published !== undefined
+          ? { published: input.published, aiSummaryApproved: input.published }
+          : {}),
+        ...(goingLive && !existing.publishedAt ? { publishedAt: new Date() } : {}),
+      },
+      include: { country: true },
+    });
+    await this.invalidate(id);
+    return this.serializeArticle(article, true);
+  }
+
+  async remove(id: string) {
+    const existing = await this.prisma.article.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Article "${id}" not found`);
+    await this.prisma.article.delete({ where: { id } });
+    await this.invalidate(id);
+    return { deleted: true, id };
+  }
+
+  private async invalidate(id?: string) {
+    await this.redis.delByPattern('articles:all:*');
+    if (id) await this.redis.del(`articles:${id}`);
   }
 
   async findOne(id: string) {
@@ -77,6 +175,8 @@ export class ArticlesService {
       tags: string[];
       aiSummary: string | null;
       sentimentScore: Prisma.Decimal | null;
+      imageUrl?: string | null;
+      published?: boolean;
     },
     includeBody = false,
   ) {
@@ -99,6 +199,8 @@ export class ArticlesService {
       tags: a.tags,
       aiSummary: a.aiSummary,
       sentimentScore: a.sentimentScore ? Number(a.sentimentScore) : null,
+      imageUrl: a.imageUrl ?? null,
+      published: a.published ?? false,
     };
   }
 }

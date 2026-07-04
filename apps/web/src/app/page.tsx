@@ -10,6 +10,8 @@ import { BreakingTicker } from '@/components/articles/BreakingTicker';
 import { CategorySection } from '@/components/articles/CategorySection';
 import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
+import { useAuth } from '@/lib/auth';
+import Link from 'next/link';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 
 // Fixed block order on the homepage — most urgent categories first.
@@ -21,6 +23,7 @@ export default function HomePage() {
   const [category, setCategory] = useState<EventCategory | null>(null);
 
   const { countries } = useCountries();
+  const { user, canEdit } = useAuth();
   const handleSelectCategory = (next: EventCategory | null) => {
     setCategory(next);
   };
@@ -60,6 +63,21 @@ export default function HomePage() {
         <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[10px] text-brand-text">
           ● LIVE
         </span>
+        {user ? (
+          <Link
+            href={canEdit ? '/admin' : '/'}
+            className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+          >
+            {canEdit ? 'Admin' : user.email}
+          </Link>
+        ) : (
+          <Link
+            href="/login"
+            className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+          >
+            Sign in
+          </Link>
+        )}
         <ThemeToggle />
       </header>
 

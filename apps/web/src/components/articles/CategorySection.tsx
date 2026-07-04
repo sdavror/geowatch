@@ -4,6 +4,7 @@ import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { ArticleCard } from './ArticleCard';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { mediaUrl } from '@/lib/api';
 
 interface CategorySectionProps {
   category: EventCategory;
@@ -51,9 +52,18 @@ export function CategorySection({
         onClick={() => onOpenArticle(featured)}
         className="mb-3 flex w-full gap-3 rounded-lg p-2 text-left transition-colors hover:bg-bg-3/50"
       >
-        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-bg-3 text-2xl">
-          {featured.country?.flagEmoji ?? '🌐'}
-        </div>
+        {mediaUrl(featured.imageUrl) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={mediaUrl(featured.imageUrl) as string}
+            alt=""
+            className="h-16 w-16 flex-shrink-0 rounded-lg object-cover"
+          />
+        ) : (
+          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg bg-bg-3 text-2xl">
+            {featured.country?.flagEmoji ?? '🌐'}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold leading-snug text-text-primary">
             {featured.title}
