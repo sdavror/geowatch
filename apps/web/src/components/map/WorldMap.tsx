@@ -147,7 +147,9 @@ function formatPopulationShort(n: number): string {
 function populationPopupHtml(country: Country): string {
   if (country.population === null) return '';
   let arrow = '';
-  if (country.populationYoyPct !== null) {
+  // typeof check (not just !== null): a stale SWR cache from an older API
+  // build may lack the field entirely.
+  if (typeof country.populationYoyPct === 'number') {
     const up = country.populationYoyPct >= 0;
     const color = up ? '#3ecf8e' : '#e84545';
     arrow =
@@ -244,17 +246,28 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       attributionControl: false,
       // Single world — no repeating continents. The geometry is cut at the
       // antimeridian (see cutAntimeridian) so nothing depends on copies.
+      // Note: no maxBounds — on wide viewports at low zoom the world is
+      // narrower than the screen, and clamping the camera against bounds
+      // in that state misbehaves.
       renderWorldCopies: false,
-      maxBounds: [
-        [-180, -85],
-        [180, 85],
-      ],
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
     map.on('load', () => {
       loadedRef.current = true;
+
+      // With renderWorldCopies: false MapLibre clamps min zoom to fit the
+      // world's WIDTH, so on wide screens the top/bottom would crop. Frame
+      // the view on the inhabited latitudes (Patagonia → northern
+      // Scandinavia) so every continent is on screen at once.
+      map.fitBounds(
+        [
+          [-180, -58],
+          [180, 74],
+        ],
+        { padding: 0, duration: 0 },
+      );
 
       // Untracked-land fill (drawn first, under the choropleth match — the
       // match itself already handles both, so this single fill layer covers
@@ -369,7 +382,13 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
             // every country with a numeric code < 100 actually matches.
             const rawId = String(f.id ?? '');
             f.properties[ISO_N3] = /^-?\d+$/.test(rawId) ? String(parseInt(rawId, 10)) : rawId;
-            cutAntimeridian(f.geometry as { type: string; coordinates: unknown });
+            try {
+              cutAntimeridian(f.geometry as { type: string; coordinates: unknown });
+            } catch (err) {
+              // One malformed feature must not blank the whole map.
+              // eslint-disable-next-line no-console
+              console.error(`Antimeridian cut failed for feature ${rawId}:`, err);
+            }
           }
           const src = map.getSource('world') as maplibregl.GeoJSONSource | undefined;
           src?.setData(fc as unknown as GeoJSON.FeatureCollection);
