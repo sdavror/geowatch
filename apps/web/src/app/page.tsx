@@ -11,6 +11,7 @@ import { CategorySection } from '@/components/articles/CategorySection';
 import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import { useAuth } from '@/lib/auth';
+import { mediaUrl } from '@/lib/api';
 import Link from 'next/link';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 
@@ -37,7 +38,9 @@ export default function HomePage() {
     articles.filter((a) => a.category === cat);
 
   const openArticle = (article: Article) => {
-    if (article.url) window.open(article.url, '_blank', 'noopener,noreferrer');
+    // Internal detail page (with comments) rather than the raw source URL —
+    // manually-authored posts have synthetic urls that aren't browsable.
+    router.push(`/news/${article.id}`);
   };
 
   const handleSelectCountry = (countryId: string) => {
@@ -65,10 +68,14 @@ export default function HomePage() {
         </span>
         {user ? (
           <Link
-            href={canEdit ? '/admin' : '/'}
-            className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+            href="/admin"
+            className="flex items-center gap-1.5 text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
           >
-            {canEdit ? 'Admin' : user.email}
+            {mediaUrl(user.avatarUrl) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl(user.avatarUrl) as string} alt="" className="h-5 w-5 rounded-full object-cover" />
+            ) : null}
+            {canEdit ? 'Admin' : user.displayName || user.email}
           </Link>
         ) : (
           <Link

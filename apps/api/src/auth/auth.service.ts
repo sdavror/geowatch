@@ -54,7 +54,7 @@ export class AuthService {
     if (role === 'superadmin') {
       this.logger.log(`👑 First user ${email} registered as owner (superadmin)`);
     }
-    return this.issueTokens(user.id, user.email, user.role);
+    return this.issueTokens(user);
   }
 
   async login(dto: LoginDto) {
@@ -71,7 +71,7 @@ export class AuthService {
       where: { id: user.id },
       data: { lastLogin: new Date() },
     });
-    return this.issueTokens(user.id, user.email, user.role);
+    return this.issueTokens(user);
   }
 
   async refresh(refreshToken: string) {
@@ -83,13 +83,22 @@ export class AuthService {
     if (!user || !user.active) {
       throw new UnauthorizedException('Account not found or disabled');
     }
-    return this.issueTokens(user.id, user.email, user.role);
+    return this.issueTokens(user);
   }
 
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true, active: true, lastLogin: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        displayName: true,
+        avatarUrl: true,
+        active: true,
+        lastLogin: true,
+        createdAt: true,
+      },
     });
     if (!user) throw new UnauthorizedException();
     return {
@@ -97,6 +106,24 @@ export class AuthService {
       lastLogin: user.lastLogin?.toISOString() ?? null,
       createdAt: user.createdAt.toISOString(),
     };
+  }
+
+  /** Update the current user's nickname and/or avatar. */
+  async updateProfile(
+    userId: string,
+    input: { displayName?: string | null; avatarUrl?: string | null },
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.displayName !== undefined
+          ? { displayName: input.displayName?.trim() || null }
+          : {}),
+        ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl } : {}),
+      },
+      select: { id: true, email: true, role: true, displayName: true, avatarUrl: true },
+    });
+    return user;
   }
 
   /** Change the current user's password after verifying the old one. */
@@ -140,7 +167,14 @@ export class AuthService {
     return user;
   }
 
-  private issueTokens(id: string, email: string, role: UserRole) {
+  private issueTokens(user: {
+    id: string;
+    email: string;
+    role: UserRole;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }) {
+    const { id, email, role } = user;
     const accessToken = signToken(
       { sub: id, email, role, type: 'access' },
       this.accessSecret(),
@@ -155,7 +189,13 @@ export class AuthService {
       accessToken,
       refreshToken,
       expiresIn: ACCESS_TTL_SECONDS,
-      user: { id, email, role },
+      user: {
+        id,
+        email,
+        role,
+        displayName: user.displayName ?? null,
+        avatarUrl: user.avatarUrl ?? null,
+      },
     };
   }
 }

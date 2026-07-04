@@ -156,13 +156,18 @@ export interface AuthTokens {
   expiresIn: number;
 }
 
+// The session user embedded in auth responses.
+export interface SessionUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
 // Returned by POST /auth/login and /auth/register.
 export interface AuthResponse extends AuthTokens {
-  user: {
-    id: string;
-    email: string;
-    role: UserRole;
-  };
+  user: SessionUser;
 }
 
 // Returned by GET /auth/me and admin user listing.
@@ -170,9 +175,24 @@ export interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
+  displayName?: string | null;
+  avatarUrl?: string | null;
   active: boolean;
   lastLogin: string | null;
   createdAt: string;
+}
+
+// A comment under an article (GET /articles/:id/comments).
+export interface Comment {
+  id: string;
+  articleId: string;
+  body: string;
+  createdAt: string;
+  author: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  };
 }
 
 export interface JwtPayload {

@@ -9,6 +9,7 @@ import { useAuth, authFetch } from '@/lib/auth';
 import { ArticleEditor } from '@/components/admin/ArticleEditor';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
+import { ProfileForm } from '@/components/admin/ProfileForm';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 
 export default function AdminPage() {
@@ -107,6 +108,7 @@ export default function AdminPage() {
               ← Back to GeoWatch
             </Link>
           </div>
+          <ProfileForm />
           <ChangePasswordForm />
         </div>
       ) : (
@@ -144,7 +146,12 @@ export default function AdminPage() {
 
           {tab === 'users' && isOwner && <UserManager />}
 
-          {tab === 'account' && <ChangePasswordForm />}
+          {tab === 'account' && (
+            <>
+              <ProfileForm />
+              <ChangePasswordForm />
+            </>
+          )}
 
           {tab === 'news' && editing && (
             <div className="mb-6">

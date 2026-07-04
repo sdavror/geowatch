@@ -192,6 +192,7 @@ model Article {
   createdAt               DateTime  @default(now()) @map("created_at")
 
   eventLinks ArticleEvent[]
+  comments   Comment[]
 
   @@map("articles")
   @@index([countryId])
@@ -220,14 +221,30 @@ model User {
   email        String    @unique @db.VarChar(255)
   passwordHash String    @map("password_hash")
   role         UserRole  @default(viewer)
+  displayName  String?   @map("display_name") @db.VarChar(50)
+  avatarUrl    String?   @map("avatar_url")
   active       Boolean   @default(true)
   lastLogin    DateTime? @map("last_login")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   refreshTokens RefreshToken[]
   articles      Article[]
+  comments      Comment[]
 
   @@map("users")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("comments")
+  @@index([articleId, createdAt(sort: Desc)])
 }
 
 model RefreshToken {

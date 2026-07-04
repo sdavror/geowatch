@@ -16,6 +16,8 @@ interface SessionUser {
   id: string;
   email: string;
   role: Role;
+  displayName?: string | null;
+  avatarUrl?: string | null;
 }
 
 interface AuthContextValue {
@@ -24,6 +26,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (input: { displayName?: string; avatarUrl?: string | null }) => Promise<void>;
   canEdit: boolean;
   isOwner: boolean;
 }
@@ -90,12 +93,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const updateProfile = async (input: { displayName?: string; avatarUrl?: string | null }) => {
+    const updated = await authFetch<SessionUser>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+    setUser((prev) => {
+      const next = prev ? { ...prev, ...updated } : updated;
+      window.localStorage.setItem(USER_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
   const canEdit = user?.role === 'editor' || user?.role === 'superadmin';
   const isOwner = user?.role === 'superadmin';
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, canEdit, isOwner }}
+      value={{ user, loading, login, register, logout, updateProfile, canEdit, isOwner }}
     >
       {children}
     </AuthContext.Provider>
@@ -126,12 +141,12 @@ export async function authFetch<T>(path: string, init?: RequestInit): Promise<T>
   return body as T;
 }
 
-/** Multipart image upload — returns the stored { imageUrl }. */
+/** Multipart image upload (any authenticated user) — returns { imageUrl }. */
 export async function uploadImage(file: File): Promise<{ imageUrl: string }> {
   const token = getAccessToken();
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${API_BASE_URL}/admin/articles/upload`, {
+  const res = await fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
