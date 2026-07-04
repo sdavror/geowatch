@@ -7,6 +7,7 @@ const CATEGORIES: Array<{ label: string; value: EventCategory | null }> = [
   { label: 'Conflict', value: 'military' },
   { label: 'Economy', value: 'economic' },
   { label: 'Politics', value: 'political' },
+  { label: 'Humanitarian', value: 'humanitarian' },
 ];
 
 interface CategoryNavProps {

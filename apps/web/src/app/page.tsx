@@ -7,38 +7,41 @@ import { useArticles } from '@/hooks/useArticles';
 import { CategoryNav } from '@/components/articles/CategoryNav';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
-import { ArticleLead } from '@/components/articles/ArticleLead';
-import { ArticleCard } from '@/components/articles/ArticleCard';
+import { CategorySection } from '@/components/articles/CategorySection';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
-import type { EventCategory } from '@geowatch/shared-types';
+import type { Article, EventCategory } from '@geowatch/shared-types';
+
+// Fixed block order on the homepage — most urgent categories first.
+// Change this array to reorder the sections.
+const CATEGORY_ORDER: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
 
 export default function HomePage() {
   const router = useRouter();
   const [category, setCategory] = useState<EventCategory | null>(null);
-  const [leadArticleId, setLeadArticleId] = useState<string | null>(null);
 
   const { countries } = useCountries();
   const handleSelectCategory = (next: EventCategory | null) => {
     setCategory(next);
-    setLeadArticleId(null);
   };
 
-  const { articles, isLoading, isError } = useArticles({
-    category: category ?? undefined,
-  });
+  const { articles, isLoading, isError } = useArticles();
 
-  const leadArticle = leadArticleId
-    ? articles.find((a) => a.id === leadArticleId) ?? articles[0]
-    : articles[0];
-  const restArticles = articles.filter((a) => a.id !== leadArticle?.id);
+  // When a category is picked in the nav, show only that block; otherwise
+  // show every category that has stories, in CATEGORY_ORDER.
+  const visibleCategories = category ? [category] : CATEGORY_ORDER;
+  const articlesByCategory = (cat: EventCategory) =>
+    articles.filter((a) => a.category === cat);
+
+  const openArticle = (article: Article) => {
+    if (article.url) window.open(article.url, '_blank', 'noopener,noreferrer');
+  };
 
   const handleSelectCountry = (countryId: string) => {
-    // Jumping from a country (map dot / risk index row) to an article finds
-    // that country's most recent story, if it has one — otherwise falls
-    // back to opening the full map where the country can be explored directly.
+    // From a country (map dot / risk index row) jump to its most recent
+    // story if it has one, otherwise open the full map to explore it.
     const match = articles.find((a) => a.countryId === countryId);
     if (match) {
-      setLeadArticleId(match.id);
+      openArticle(match);
     } else {
       router.push('/map');
     }
@@ -72,13 +75,20 @@ export default function HomePage() {
             </div>
           )}
 
-          {leadArticle && <ArticleLead article={leadArticle} />}
+          {!isLoading && !isError && articles.length === 0 && (
+            <p className="py-10 text-center text-xs text-text-tertiary">
+              No stories yet. Check back soon.
+            </p>
+          )}
 
-          <div className="flex flex-col gap-1">
-            {restArticles.map((a) => (
-              <ArticleCard key={a.id} article={a} onSelect={setLeadArticleId} />
-            ))}
-          </div>
+          {visibleCategories.map((cat) => (
+            <CategorySection
+              key={cat}
+              category={cat}
+              articles={articlesByCategory(cat)}
+              onOpenArticle={openArticle}
+            />
+          ))}
         </div>
 
         <RiskSidebar
