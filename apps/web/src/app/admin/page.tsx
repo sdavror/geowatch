@@ -8,6 +8,7 @@ import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useAuth, authFetch } from '@/lib/auth';
 import { ArticleEditor } from '@/components/admin/ArticleEditor';
 import { UserManager } from '@/components/admin/UserManager';
+import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 
 export default function AdminPage() {
@@ -17,7 +18,7 @@ export default function AdminPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Article | null | 'new'>(null);
-  const [tab, setTab] = useState<'news' | 'users'>('news');
+  const [tab, setTab] = useState<'news' | 'users' | 'account'>('news');
 
   const loadArticles = useCallback(async () => {
     try {
@@ -92,18 +93,21 @@ export default function AdminPage() {
       </header>
 
       {!canEdit ? (
-        <div className="mx-auto max-w-md px-5 py-16 text-center">
-          <p className="text-sm text-text-primary">Your account doesn&apos;t have editor access yet.</p>
-          <p className="mt-2 text-xs text-text-tertiary">
-            Ask an administrator to promote your account to editor. Until then you can browse the
-            site as a regular user.
-          </p>
-          <Link
-            href="/"
-            className="mt-4 inline-block rounded-lg bg-brand-bg px-4 py-2 text-xs font-medium text-brand-text"
-          >
-            Back to GeoWatch
-          </Link>
+        <div className="mx-auto max-w-md px-5 py-12">
+          <div className="mb-6 text-center">
+            <p className="text-sm text-text-primary">Your account doesn&apos;t have editor access yet.</p>
+            <p className="mt-2 text-xs text-text-tertiary">
+              Ask an administrator to promote your account to editor. You can still manage your
+              account below.
+            </p>
+            <Link
+              href="/"
+              className="mt-3 inline-block text-xs text-brand-text hover:underline"
+            >
+              ← Back to GeoWatch
+            </Link>
+          </div>
+          <ChangePasswordForm />
         </div>
       ) : (
         <div className="mx-auto max-w-4xl px-5 py-6">
@@ -122,6 +126,12 @@ export default function AdminPage() {
                 Users
               </button>
             )}
+            <button
+              onClick={() => setTab('account')}
+              className={`rounded-lg px-3 py-1.5 text-xs ${tab === 'account' ? 'bg-bg-3 text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
+            >
+              Account
+            </button>
             {tab === 'news' && !editing && (
               <button
                 onClick={() => setEditing('new')}
@@ -133,6 +143,8 @@ export default function AdminPage() {
           </div>
 
           {tab === 'users' && isOwner && <UserManager />}
+
+          {tab === 'account' && <ChangePasswordForm />}
 
           {tab === 'news' && editing && (
             <div className="mb-6">

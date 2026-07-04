@@ -99,6 +99,20 @@ export class AuthService {
     };
   }
 
+  /** Change the current user's password after verifying the old one. */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    this.logger.log(`Password changed for ${user.email}`);
+    return { success: true };
+  }
+
   /** Admin: list all accounts (for approving editors). */
   async listUsers() {
     const users = await this.prisma.user.findMany({
