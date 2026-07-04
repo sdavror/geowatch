@@ -86,7 +86,7 @@ curl http://localhost:4000/api/health
 # Очікується: {"status":"ok","db":"ok","redis":"ok","version":"1.0.0","uptime":N}
 ```
 
-Адмін-користувач після seed: `admin@geowatch.local` / пароль із `ADMIN_SEED_PASSWORD` (за замовчуванням `ChangeMe123!`).
+Адмін-користувач після seed: `avrorikv20@gmail.com` (або `ADMIN_SEED_EMAIL`) / пароль із `ADMIN_SEED_PASSWORD` (за замовчуванням `ChangeMe123!`).
 **Обов'язково змінити пароль перед production-деплоєм.**
 
 ## Корисні команди
