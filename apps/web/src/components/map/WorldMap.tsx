@@ -39,93 +39,33 @@ interface CountryFeature {
 // ── Antimeridian handling ─────────────────────────────────────────────
 // Features that cross the antimeridian (Russia, Fiji) have rings whose
 // longitudes jump from +180 to -180 mid-ring. Rendered naively, that jump
-// draws a fill band across the entire map. We fix it in two steps:
-// 1. unwrap each ring so it's continuous (longitudes may exceed ±180),
-// 2. cut the polygon along the ±180 line into two pieces, shifting the
-//    overflowing piece back into [-180, 180].
-// The cut (instead of relying on world copies to render the overflow) is
-// what lets us run with renderWorldCopies: false — a single world with no
-// repeating continents.
-function unwrapRing(ring: number[][]): number[][] {
-  const out: number[][] = [ring[0]];
+// draws a fill band across the whole map. We "unwrap" each ring so it's
+// continuous — letting longitudes exceed ±180 — and let MapLibre render
+// the overflow on the adjacent world copy (renderWorldCopies: true). A
+// dynamic minZoom keeps a single world filling the viewport, so those
+// copies never actually show as duplicated continents.
+//
+// (An earlier version clipped the rings to ±180 to run without world
+// copies, but Sutherland–Hodgman clipping produces sliver triangles on
+// concave polygons like Russia — the artifacts this replaces.)
+function unwrapRing(ring: number[][]): void {
   for (let i = 1; i < ring.length; i++) {
-    const prevLon = out[i - 1][0];
+    const prevLon = ring[i - 1][0];
     let lon = ring[i][0];
     while (lon - prevLon > 180) lon -= 360;
     while (lon - prevLon < -180) lon += 360;
-    out.push([lon, ring[i][1]]);
+    ring[i] = [lon, ring[i][1]];
   }
-  return out;
 }
 
-// Sutherland–Hodgman clip of a ring against the half-plane lon <= bound
-// (side = 'left') or lon >= bound (side = 'right').
-function clipRing(ring: number[][], bound: number, side: 'left' | 'right'): number[][] {
-  const inside = (p: number[]) => (side === 'left' ? p[0] <= bound : p[0] >= bound);
-  const intersect = (a: number[], b: number[]): number[] => {
-    const t = (bound - a[0]) / (b[0] - a[0]);
-    return [bound, a[1] + t * (b[1] - a[1])];
-  };
-  const out: number[][] = [];
-  for (let i = 0; i < ring.length; i++) {
-    const cur = ring[i];
-    const prev = ring[(i - 1 + ring.length) % ring.length];
-    const curIn = inside(cur);
-    const prevIn = inside(prev);
-    if (curIn) {
-      if (!prevIn) out.push(intersect(prev, cur));
-      out.push(cur);
-    } else if (prevIn) {
-      out.push(intersect(prev, cur));
+function unwrapAntimeridian(geometry: { type: string; coordinates: unknown }): void {
+  if (geometry.type === 'Polygon') {
+    for (const ring of geometry.coordinates as number[][][]) unwrapRing(ring);
+  } else if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.coordinates as number[][][][]) {
+      for (const ring of polygon) unwrapRing(ring);
     }
   }
-  if (out.length >= 3) {
-    const first = out[0];
-    const last = out[out.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) out.push([...first]);
-  }
-  return out.length >= 4 ? out : [];
-}
-
-// Splits a Polygon/MultiPolygon at the antimeridian; returns MultiPolygon
-// coordinates entirely within [-180, 180].
-function cutAntimeridian(geometry: { type: string; coordinates: unknown }): void {
-  const polygons: number[][][][] =
-    geometry.type === 'Polygon'
-      ? [geometry.coordinates as number[][][]]
-      : geometry.type === 'MultiPolygon'
-        ? (geometry.coordinates as number[][][][])
-        : [];
-  if (polygons.length === 0) return;
-
-  const result: number[][][][] = [];
-  for (const polygon of polygons) {
-    const rings = polygon.map(unwrapRing);
-    const lons = rings.flatMap((r) => r.map((p) => p[0]));
-    const maxLon = Math.max(...lons);
-    const minLon = Math.min(...lons);
-
-    if (maxLon > 180) {
-      const left = rings.map((r) => clipRing(r, 180, 'left')).filter((r) => r.length > 0);
-      const right = rings
-        .map((r) => clipRing(r, 180, 'right').map((p) => [p[0] - 360, p[1]]))
-        .filter((r) => r.length > 0);
-      if (left.length) result.push(left);
-      if (right.length) result.push(right);
-    } else if (minLon < -180) {
-      const right = rings.map((r) => clipRing(r, -180, 'right')).filter((r) => r.length > 0);
-      const left = rings
-        .map((r) => clipRing(r, -180, 'left').map((p) => [p[0] + 360, p[1]]))
-        .filter((r) => r.length > 0);
-      if (right.length) result.push(right);
-      if (left.length) result.push(left);
-    } else {
-      result.push(rings);
-    }
-  }
-
-  geometry.type = 'MultiPolygon';
-  geometry.coordinates = result;
 }
 
 // Compact GDP label — "$178B" / "$2.0T".
@@ -241,33 +181,31 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       style: buildBaseStyle(),
       center: [20, 30],
       zoom: 1.4,
-      minZoom: 1,
       maxZoom: 8,
       attributionControl: false,
-      // Single world — no repeating continents. The geometry is cut at the
-      // antimeridian (see cutAntimeridian) so nothing depends on copies.
-      // Note: no maxBounds — on wide viewports at low zoom the world is
-      // narrower than the screen, and clamping the camera against bounds
-      // in that state misbehaves.
-      renderWorldCopies: false,
+      // World copies render antimeridian-crossing polygons (Russia, Fiji)
+      // correctly across the seam. lockToOneWorld() below then pins minZoom
+      // so a single world always fills the viewport — the copies stay
+      // off-screen, so no duplicated continents.
+      renderWorldCopies: true,
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
+    // Pin minZoom to the zoom at which one world exactly fills the viewport
+    // width, so the user can never zoom out far enough to see a second copy.
+    // Recomputed on resize. worldPx = 512 * 2^zoom (MapLibre's 512 tiles).
+    const lockToOneWorld = () => {
+      const w = map.getContainer().clientWidth || 1;
+      const fillZoom = Math.log2(w / 512);
+      map.setMinZoom(fillZoom);
+      if (map.getZoom() < fillZoom) map.setZoom(fillZoom);
+    };
+
     map.on('load', () => {
       loadedRef.current = true;
-
-      // With renderWorldCopies: false MapLibre clamps min zoom to fit the
-      // world's WIDTH, so on wide screens the top/bottom would crop. Frame
-      // the view on the inhabited latitudes (Patagonia → northern
-      // Scandinavia) so every continent is on screen at once.
-      map.fitBounds(
-        [
-          [-180, -58],
-          [180, 74],
-        ],
-        { padding: 0, duration: 0 },
-      );
+      lockToOneWorld();
+      map.on('resize', lockToOneWorld);
 
       // Untracked-land fill (drawn first, under the choropleth match — the
       // match itself already handles both, so this single fill layer covers
@@ -382,13 +320,7 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
             // every country with a numeric code < 100 actually matches.
             const rawId = String(f.id ?? '');
             f.properties[ISO_N3] = /^-?\d+$/.test(rawId) ? String(parseInt(rawId, 10)) : rawId;
-            try {
-              cutAntimeridian(f.geometry as { type: string; coordinates: unknown });
-            } catch (err) {
-              // One malformed feature must not blank the whole map.
-              // eslint-disable-next-line no-console
-              console.error(`Antimeridian cut failed for feature ${rawId}:`, err);
-            }
+            unwrapAntimeridian(f.geometry as { type: string; coordinates: unknown });
           }
           const src = map.getSource('world') as maplibregl.GeoJSONSource | undefined;
           src?.setData(fc as unknown as GeoJSON.FeatureCollection);
