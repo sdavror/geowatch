@@ -12,6 +12,7 @@ import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import { useAuth } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
+import { Logo } from '@/components/Logo';
 import Link from 'next/link';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 
@@ -58,10 +59,15 @@ export default function HomePage() {
     <main className="flex h-screen flex-col bg-bg">
       <NewsListJsonLd articles={articles} />
       {/* Single visible-to-crawlers h1 for the page. Kept off-screen so it
-          doesn't duplicate the compact wordmark in the header. */}
-      <h1 className="sr-only">GeoWatch — Global geopolitical intelligence</h1>
+          doesn't duplicate the compact lockup in the header. */}
+      <h1 className="sr-only">Apolitics — аполітично про політику, без упереджень</h1>
       <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
-        <span className="text-[15px] font-semibold tracking-wide text-text-primary">GeoWatch</span>
+        <Logo />
+        {/* The slogan lives beside the lockup (not inside the logo) so the
+            mark stays legible at any size — brand lockup system. */}
+        <span className="hidden whitespace-nowrap text-[12px] text-text-tertiary xl:inline">
+          аполітично про політику
+        </span>
         <CategoryNav active={category} onSelect={handleSelectCategory} />
         <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[11px] text-brand-text">
           ● LIVE

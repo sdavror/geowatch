@@ -1,6 +1,8 @@
-# GeoWatch
+# Apolitics
 
-Глобальна геополітична інтелігенс-платформа. Monorepo: Next.js 14 (web) + NestJS (api) + PostgreSQL + Redis.
+**Аполітично про політику. Без упереджень.**
+
+Глобальна геополітична інтелігенс-платформа (кодова назва репозиторію — geowatch). Monorepo: Next.js 14 (web) + NestJS (api) + PostgreSQL + Redis.
 
 ## Стек
 

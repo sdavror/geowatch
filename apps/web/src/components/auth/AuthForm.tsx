@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { Mark } from '@/components/Logo';
 
 interface AuthFormProps {
   mode: 'login' | 'register';
@@ -38,8 +39,12 @@ export function AuthForm({ mode }: AuthFormProps) {
     <main className="flex min-h-screen items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-lg font-semibold tracking-wide text-text-primary">GeoWatch</div>
-          <p className="mt-1 text-xs text-text-tertiary">
+          <div className="flex items-center justify-center gap-2">
+            <Mark size={26} />
+            <span className="text-lg font-semibold tracking-wide text-text-primary">Apolitics</span>
+          </div>
+          <p className="mt-1 text-[12px] text-text-tertiary">аполітично про політику · без упереджень</p>
+          <p className="mt-3 text-xs text-text-tertiary">
             {isRegister ? 'Create your account' : 'Sign in to continue'}
           </p>
         </div>
@@ -99,7 +104,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         </p>
         <p className="mt-6 text-center text-[11px] text-text-tertiary">
           <Link href="/" className="hover:text-text-secondary">
-            ← Back to GeoWatch
+            ← Back to Apolitics
           </Link>
         </p>
       </div>

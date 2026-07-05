@@ -10,6 +10,7 @@ import { ArticleEditor } from '@/components/admin/ArticleEditor';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
+import { Logo } from '@/components/Logo';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 
 export default function AdminPage() {
@@ -74,9 +75,10 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-bg">
       <header className="flex h-12 items-center gap-4 border-b border-border/10 bg-bg-2/70 px-5 backdrop-blur-xl">
-        <span className="text-[15px] font-semibold tracking-wide text-text-primary">
-          GeoWatch <span className="text-text-tertiary">Admin</span>
-        </span>
+        <div className="flex items-center gap-2">
+          <Logo href="/admin" />
+          <span className="text-[15px] font-semibold tracking-wide text-text-tertiary">Admin</span>
+        </div>
         <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
           ← Site
         </Link>
@@ -105,7 +107,7 @@ export default function AdminPage() {
               href="/"
               className="mt-3 inline-block text-xs text-brand-text hover:underline"
             >
-              ← Back to GeoWatch
+              ← Back to Apolitics
             </Link>
           </div>
           <ProfileForm />

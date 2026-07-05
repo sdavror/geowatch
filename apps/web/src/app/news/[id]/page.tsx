@@ -7,6 +7,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { fetcher, mediaUrl } from '@/lib/api';
 import { CommentsSection } from '@/components/articles/CommentsSection';
+import { Logo } from '@/components/Logo';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 
 export default function NewsDetailPage() {
@@ -22,9 +23,7 @@ export default function NewsDetailPage() {
   return (
     <main className="min-h-screen bg-bg">
       <header className="flex h-12 items-center gap-4 border-b border-border/10 bg-bg-2/70 px-5 backdrop-blur-xl">
-        <Link href="/" className="text-[15px] font-semibold tracking-wide text-text-primary">
-          GeoWatch
-        </Link>
+        <Logo />
         <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
           ← Back to feed
         </Link>

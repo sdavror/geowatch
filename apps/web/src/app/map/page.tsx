@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
 import dynamic from 'next/dynamic';
 import { useCountries, useCountry } from '@/hooks/useCountries';
 import { useMapStore } from '@/store/useMapStore';
@@ -53,10 +54,7 @@ export default function MapPage() {
     <main className="flex h-screen flex-col bg-bg">
       {/* Header */}
       <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-border/10 bg-bg-2/70 px-4 backdrop-blur-xl">
-        <div className="flex items-center gap-2 text-sm font-semibold tracking-wide">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-status-conflict" />
-          GEOWATCH
-        </div>
+        <Logo />
         <Link href="/" className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary">
           ← Back to feed
         </Link>

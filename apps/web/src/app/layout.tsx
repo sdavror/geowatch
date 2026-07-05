@@ -19,22 +19,23 @@ const lora = Lora({
   display: 'swap',
 });
 
+const SITE_TITLE = 'Apolitics — аполітично про політику';
+const SITE_DESCRIPTION =
+  'Аполітично про політику. Без упереджень: конфлікти, економічна нестабільність і політичні ризики у 201 країні світу — на живій карті та у стрічці новин.';
+
 export const metadata: Metadata = {
-  title: 'GeoWatch — Global Intelligence Platform',
-  description:
-    'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
   openGraph: {
-    title: 'GeoWatch — Global Intelligence Platform',
-    description:
-      'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     type: 'website',
-    siteName: 'GeoWatch',
+    siteName: 'Apolitics',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'GeoWatch — Global Intelligence Platform',
-    description:
-      'Real-time geopolitical intelligence: conflicts, economic instability, and political risk worldwide.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 };
 
