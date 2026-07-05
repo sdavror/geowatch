@@ -6,7 +6,7 @@ const ORDER: CountryStatus[] = ['conflict', 'crisis', 'unstable', 'stable'];
 export function MapLegend() {
   return (
     <div className="absolute left-3 top-3 z-10 rounded-2xl border border-border/10 bg-bg-2/60 p-3 shadow-lg backdrop-blur-xl">
-      <div className="mb-2 text-[10px] uppercase tracking-wide text-text-tertiary">
+      <div className="mb-2 text-[11px] uppercase tracking-wide text-text-tertiary">
         Status Legend
       </div>
       <div className="flex flex-col gap-1.5">

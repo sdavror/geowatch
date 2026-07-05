@@ -63,13 +63,13 @@ export default function HomePage() {
       <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
         <span className="text-[15px] font-semibold tracking-wide text-text-primary">GeoWatch</span>
         <CategoryNav active={category} onSelect={handleSelectCategory} />
-        <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[10px] text-brand-text">
+        <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[11px] text-brand-text">
           ● LIVE
         </span>
         {user ? (
           <Link
             href="/admin"
-            className="flex items-center gap-1.5 text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+            className="flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
           >
             {mediaUrl(user.avatarUrl) ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -80,7 +80,7 @@ export default function HomePage() {
         ) : (
           <Link
             href="/login"
-            className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+            className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
           >
             Sign in
           </Link>

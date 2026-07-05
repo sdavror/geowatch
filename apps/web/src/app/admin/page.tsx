@@ -77,16 +77,16 @@ export default function AdminPage() {
         <span className="text-[15px] font-semibold tracking-wide text-text-primary">
           GeoWatch <span className="text-text-tertiary">Admin</span>
         </span>
-        <Link href="/" className="text-[11px] text-text-tertiary hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
           ← Site
         </Link>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-[11px] text-text-tertiary">
+          <span className="text-[12px] text-text-tertiary">
             {user.email} · <span className="text-brand-text">{user.role}</span>
           </span>
           <button
             onClick={logout}
-            className="rounded-md border border-border/10 bg-bg-3 px-2.5 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
+            className="rounded-md border border-border/10 bg-bg-3 px-2.5 py-1 text-[12px] text-text-secondary hover:bg-bg-4"
           >
             Sign out
           </button>
@@ -177,8 +177,8 @@ export default function AdminPage() {
                   >
                     <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] text-text-primary">{a.title}</div>
-                      <div className="mt-0.5 flex items-center gap-2 text-[10px]">
+                      <div className="truncate text-[14px] text-text-primary">{a.title}</div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[11px]">
                         {a.category && (
                           <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
                             {CATEGORY_LABEL[a.category as EventCategory]}
@@ -198,19 +198,19 @@ export default function AdminPage() {
                     </div>
                     <button
                       onClick={() => togglePublish(a)}
-                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[10px] text-text-secondary hover:bg-bg-4"
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
                     >
                       {a.published ? 'Unpublish' : 'Publish'}
                     </button>
                     <button
                       onClick={() => setEditing(a)}
-                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[10px] text-text-secondary hover:bg-bg-4"
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(a.id)}
-                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[10px] text-text-tertiary hover:text-status-conflict"
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-tertiary hover:text-status-conflict"
                     >
                       Delete
                     </button>

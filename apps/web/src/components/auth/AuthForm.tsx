@@ -48,7 +48,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           onSubmit={handleSubmit}
           className="rounded-2xl border border-border/10 bg-bg-2 p-5 shadow-lg"
         >
-          <label className="mb-1 block text-[11px] text-text-secondary">Email</label>
+          <label className="mb-1 block text-[12px] text-text-secondary">Email</label>
           <input
             type="email"
             required
@@ -58,7 +58,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             className="mb-3 w-full rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
           />
 
-          <label className="mb-1 block text-[11px] text-text-secondary">Password</label>
+          <label className="mb-1 block text-[12px] text-text-secondary">Password</label>
           <input
             type="password"
             required
@@ -97,7 +97,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             </>
           )}
         </p>
-        <p className="mt-6 text-center text-[10px] text-text-tertiary">
+        <p className="mt-6 text-center text-[11px] text-text-tertiary">
           <Link href="/" className="hover:text-text-secondary">
             ← Back to GeoWatch
           </Link>

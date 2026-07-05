@@ -57,11 +57,11 @@ export default function MapPage() {
           <span className="h-2 w-2 animate-pulse rounded-full bg-status-conflict" />
           GEOWATCH
         </div>
-        <Link href="/" className="text-[11px] text-text-tertiary transition-colors hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary">
           ← Back to feed
         </Link>
         <div className="ml-auto flex items-center gap-2">
-          <span className="rounded-full border border-status-conflict/30 bg-status-conflict/15 px-2 py-0.5 text-[10px] text-status-conflict">
+          <span className="rounded-full border border-status-conflict/30 bg-status-conflict/15 px-2 py-0.5 text-[11px] text-status-conflict">
             ● LIVE
           </span>
           <input
@@ -125,7 +125,7 @@ export default function MapPage() {
                 <div className="text-xl font-bold" style={{ color: STATUS_COLOR[status] }}>
                   {countries.filter((c) => c.status === status).length}
                 </div>
-                <div className="text-[10px] text-text-tertiary">{STATUS_LABEL[status]}</div>
+                <div className="text-[11px] text-text-tertiary">{STATUS_LABEL[status]}</div>
               </button>
             ))}
           </div>
@@ -140,7 +140,7 @@ export default function MapPage() {
                   <div className="truncate text-sm font-semibold text-text-primary">
                     {selectedCountry.name}
                   </div>
-                  <div className="truncate text-[10px] text-text-tertiary">
+                  <div className="truncate text-[11px] text-text-tertiary">
                     {selectedCountry.capital} · Risk {selectedCountry.riskScore.toFixed(1)}
                   </div>
                   <div className="mt-1">

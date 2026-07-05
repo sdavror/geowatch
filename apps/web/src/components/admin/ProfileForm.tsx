@@ -72,7 +72,7 @@ export function ProfileForm() {
         )}
       </div>
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Nickname</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Nickname</label>
       <input
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value)}

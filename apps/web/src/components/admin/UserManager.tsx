@@ -51,14 +51,14 @@ export function UserManager() {
           >
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs text-text-primary">{u.email}</div>
-              <div className="text-[10px] text-text-tertiary">
+              <div className="text-[11px] text-text-tertiary">
                 {u.lastLogin ? `Last seen ${new Date(u.lastLogin).toLocaleDateString()}` : 'Never signed in'}
               </div>
             </div>
             <select
               value={u.role}
               onChange={(e) => changeRole(u.id, e.target.value as UserRole)}
-              className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-primary focus:border-accent-blue focus:outline-none"
+              className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[12px] text-text-primary focus:border-accent-blue focus:outline-none"
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
@@ -69,7 +69,7 @@ export function UserManager() {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-text-tertiary">
+      <p className="mt-2 text-[11px] text-text-tertiary">
         Promote a user to <span className="text-text-secondary">editor</span> to let them write and
         publish news.
       </p>

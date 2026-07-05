@@ -17,7 +17,7 @@ interface CategoryNavProps {
 
 export function CategoryNav({ active, onSelect }: CategoryNavProps) {
   return (
-    <nav className="flex gap-4 text-[13px]">
+    <nav className="flex gap-4 text-[14px]">
       {CATEGORIES.map((c) => (
         <button
           key={c.label}

@@ -21,16 +21,16 @@ export function ArticleCard({ article, onSelect }: ArticleCardProps) {
       <div className="min-w-0 flex-1">
         {article.category && (
           <span
-            className="text-[10px] font-medium"
+            className="text-[11px] font-medium"
             style={{ color: CATEGORY_COLOR[article.category as EventCategory] }}
           >
             {CATEGORY_LABEL[article.category as EventCategory]?.toUpperCase()}
           </span>
         )}
-        <div className="mt-0.5 line-clamp-2 text-[13px] font-medium leading-snug text-text-primary">
+        <div className="mt-0.5 line-clamp-2 text-[14px] font-medium leading-snug text-text-primary">
           {article.title}
         </div>
-        <div className="mt-1 text-[10px] text-text-tertiary">
+        <div className="mt-1 text-[11px] text-text-tertiary">
           {article.publishedAt && (
             <time dateTime={article.publishedAt}>
               {formatRelativeTime(article.publishedAt)}

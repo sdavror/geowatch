@@ -45,7 +45,7 @@ export function CategorySection({
         <h2 className="text-sm font-semibold tracking-wide text-text-primary">
           {CATEGORY_LABEL[category]}
         </h2>
-        <span className="text-[11px] text-text-tertiary">{articles.length}</span>
+        <span className="text-[12px] text-text-tertiary">{articles.length}</span>
       </div>
 
       <button
@@ -73,7 +73,7 @@ export function CategorySection({
               {featured.aiSummary}
             </p>
           )}
-          <div className="mt-1 text-[10px] text-text-tertiary">
+          <div className="mt-1 text-[11px] text-text-tertiary">
             {featured.publishedAt && (
               <time dateTime={featured.publishedAt}>
                 {formatRelativeTime(featured.publishedAt)}

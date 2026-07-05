@@ -43,7 +43,7 @@ export function ChangePasswordForm() {
     <form onSubmit={handleSubmit} className="max-w-sm rounded-2xl border border-border/10 bg-bg-2 p-5">
       <h2 className="mb-4 text-sm font-semibold text-text-primary">Change password</h2>
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Current password</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Current password</label>
       <input
         type="password"
         required
@@ -52,7 +52,7 @@ export function ChangePasswordForm() {
         className={inputClass}
       />
 
-      <label className="mb-1 block text-[11px] text-text-secondary">New password</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">New password</label>
       <input
         type="password"
         required
@@ -63,7 +63,7 @@ export function ChangePasswordForm() {
         className={inputClass}
       />
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Confirm new password</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Confirm new password</label>
       <input
         type="password"
         required

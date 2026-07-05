@@ -28,14 +28,14 @@ export function EventTimeline({ events }: { events: GeopoliticalEvent[] }) {
           key={event.id}
           className="rounded-lg border border-border/10 bg-bg-3 p-2.5 transition-colors hover:bg-bg-4"
         >
-          <div className="mb-1 text-[10px] text-text-tertiary">
+          <div className="mb-1 text-[11px] text-text-tertiary">
             {formatDate(event.startedAt)}
           </div>
           <div className="text-xs font-medium leading-relaxed text-text-primary">
             {event.title}
           </div>
           <span
-            className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] ${
+            className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[11px] ${
               CATEGORY_STYLE[event.category] ?? 'bg-bg-4 text-text-secondary'
             }`}
           >

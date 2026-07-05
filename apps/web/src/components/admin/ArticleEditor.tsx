@@ -91,7 +91,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
         </button>
       </div>
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Title</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Title</label>
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -100,7 +100,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
 
       <div className="mb-3 flex gap-3">
         <div className="flex-1">
-          <label className="mb-1 block text-[11px] text-text-secondary">Category</label>
+          <label className="mb-1 block text-[12px] text-text-secondary">Category</label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as EventCategory)}
@@ -114,7 +114,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
           </select>
         </div>
         <div className="w-28">
-          <label className="mb-1 block text-[11px] text-text-secondary">Country (ISO2)</label>
+          <label className="mb-1 block text-[12px] text-text-secondary">Country (ISO2)</label>
           <input
             value={countryId}
             onChange={(e) => setCountryId(e.target.value)}
@@ -125,7 +125,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
         </div>
       </div>
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Summary</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Summary</label>
       <textarea
         value={aiSummary}
         onChange={(e) => setSummary(e.target.value)}
@@ -133,7 +133,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
         className="mb-3 w-full resize-y rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
       />
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Body</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Body</label>
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -141,7 +141,7 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
         className="mb-3 w-full resize-y rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
       />
 
-      <label className="mb-1 block text-[11px] text-text-secondary">Photo</label>
+      <label className="mb-1 block text-[12px] text-text-secondary">Photo</label>
       <div className="mb-3 flex items-center gap-3">
         {resolvedImage && (
           // eslint-disable-next-line @next/next/no-img-element

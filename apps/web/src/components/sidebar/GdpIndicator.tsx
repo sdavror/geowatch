@@ -11,7 +11,7 @@ function formatGdp(usd: number): string {
 
 export function GdpIndicator({ gdpUsd }: { gdpUsd: number | null }) {
   if (gdpUsd === null) {
-    return <p className="text-[10px] text-text-tertiary">GDP data unavailable</p>;
+    return <p className="text-[11px] text-text-tertiary">GDP data unavailable</p>;
   }
 
   const ratio = gdpUsd / WORLD_AVG_GDP_USD;
@@ -25,7 +25,7 @@ export function GdpIndicator({ gdpUsd }: { gdpUsd: number | null }) {
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[10px]">
+      <div className="mb-1 flex items-center justify-between text-[11px]">
         <span className="text-text-tertiary">GDP vs world avg</span>
         <span className={aboveAverage ? 'text-status-stable' : 'text-text-secondary'}>
           {formatGdp(gdpUsd)} · {ratio >= 1 ? `${ratio.toFixed(1)}×` : `${ratio.toFixed(2)}×`}

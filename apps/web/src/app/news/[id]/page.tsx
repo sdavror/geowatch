@@ -25,7 +25,7 @@ export default function NewsDetailPage() {
         <Link href="/" className="text-[15px] font-semibold tracking-wide text-text-primary">
           GeoWatch
         </Link>
-        <Link href="/" className="text-[11px] text-text-tertiary hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
           ← Back to feed
         </Link>
       </header>
@@ -42,7 +42,7 @@ export default function NewsDetailPage() {
           <>
             {article.category && (
               <span
-                className="text-[11px] font-medium"
+                className="text-[12px] font-medium"
                 style={{ color: CATEGORY_COLOR[article.category as EventCategory] }}
               >
                 {CATEGORY_LABEL[article.category as EventCategory]?.toUpperCase()}
@@ -51,7 +51,7 @@ export default function NewsDetailPage() {
             <h1 className="mt-1 text-2xl font-bold leading-tight text-text-primary">
               {article.title}
             </h1>
-            <div className="mt-2 text-[11px] text-text-tertiary">
+            <div className="mt-2 text-[12px] text-text-tertiary">
               {article.publishedAt && (
                 <time dateTime={article.publishedAt}>{formatRelativeTime(article.publishedAt)}</time>
               )}
@@ -68,12 +68,14 @@ export default function NewsDetailPage() {
             )}
 
             {article.aiSummary && (
-              <p className="mt-4 text-[15px] font-medium leading-relaxed text-text-secondary">
+              <p className="mt-4 text-[16px] font-medium leading-relaxed text-text-secondary">
                 {article.aiSummary}
               </p>
             )}
+            {/* Long-form body reads in Lora (serif) at a book-like measure —
+                17px with a 1.75 line height. */}
             {article.body && (
-              <div className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-text-primary">
+              <div className="mt-5 whitespace-pre-wrap font-serif text-[17px] leading-[1.75] text-text-primary">
                 {article.body}
               </div>
             )}

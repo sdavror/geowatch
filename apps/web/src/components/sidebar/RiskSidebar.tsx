@@ -25,14 +25,14 @@ export function RiskSidebar({ countries, onSelectCountry, onOpenFullMap }: RiskS
         </div>
         <button
           onClick={onOpenFullMap}
-          className="flex w-full items-center justify-between px-3 py-2 text-[11px] text-text-tertiary transition-colors hover:text-text-secondary"
+          className="flex w-full items-center justify-between px-3 py-2 text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
         >
           <span>World risk map</span>
           <span className="text-brand">View ›</span>
         </button>
       </div>
 
-      <div className="text-[10px] font-medium tracking-wide text-text-tertiary">TOP RISK INDEX</div>
+      <div className="text-[11px] font-medium tracking-wide text-text-tertiary">TOP RISK INDEX</div>
       <div className="mt-2 flex flex-col gap-2">
         {topRisk.map((c) => (
           <button

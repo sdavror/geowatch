@@ -68,11 +68,11 @@ export function CountrySidebar({ countryId, onClose }: CountrySidebarProps) {
             <div className="mb-4 grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border/10 bg-bg-3 p-2 text-center">
                 <div className="text-lg font-bold">{country.riskScore.toFixed(1)}</div>
-                <div className="text-[10px] text-text-tertiary">Risk Score</div>
+                <div className="text-[11px] text-text-tertiary">Risk Score</div>
               </div>
               <div className="rounded-lg border border-border/10 bg-bg-3 p-2 text-center">
                 <div className="text-lg font-bold">{country.events.length}</div>
-                <div className="text-[10px] text-text-tertiary">Recent Events</div>
+                <div className="text-[11px] text-text-tertiary">Recent Events</div>
               </div>
             </div>
 
@@ -81,14 +81,14 @@ export function CountrySidebar({ countryId, onClose }: CountrySidebarProps) {
               <GdpIndicator gdpUsd={country.gdpUsd} />
             </div>
 
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
               Recent Events
             </div>
             <EventTimeline events={country.events} />
 
             {country.recentArticles.length > 0 && (
               <>
-                <div className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+                <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
                   Related News
                 </div>
                 <div className="flex flex-col gap-2">

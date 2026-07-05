@@ -114,19 +114,19 @@ export function CommentsSection({ articleId }: { articleId: string }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-text-primary">{c.author.name}</span>
-                    <span className="text-[10px] text-text-tertiary">
+                    <span className="text-[11px] text-text-tertiary">
                       {formatRelativeTime(c.createdAt)}
                     </span>
                     {canDelete && (
                       <button
                         onClick={() => remove(c.id)}
-                        className="ml-auto text-[10px] text-text-tertiary hover:text-status-conflict"
+                        className="ml-auto text-[11px] text-text-tertiary hover:text-status-conflict"
                       >
                         Delete
                       </button>
                     )}
                   </div>
-                  <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-text-secondary">{c.body}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-[14px] text-text-secondary">{c.body}</p>
                 </div>
               </div>
             );

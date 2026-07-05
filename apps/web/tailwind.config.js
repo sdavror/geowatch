@@ -10,11 +10,18 @@ function withOpacity(variableName) {
       : `rgb(var(${variableName}) / ${opacityValue})`;
 }
 
+const defaultTheme = require('tailwindcss/defaultTheme');
+
 module.exports = {
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   darkMode: 'class', // toggled via a `dark`/`light` class on <html>, see ThemeProvider
   theme: {
     extend: {
+      fontFamily: {
+        // Wired to next/font CSS variables set on <html> in layout.tsx.
+        sans: ['var(--font-inter)', ...defaultTheme.fontFamily.sans],
+        serif: ['var(--font-lora)', 'Georgia', ...defaultTheme.fontFamily.serif],
+      },
       colors: {
         bg: {
           DEFAULT: withOpacity('--color-bg'),

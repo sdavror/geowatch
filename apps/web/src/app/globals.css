@@ -16,7 +16,8 @@
 
   --color-text-primary: 232 234 240;   /* #e8eaf0 */
   --color-text-secondary: 155 163 180; /* #9ba3b4 */
-  --color-text-tertiary: 99 107 122;   /* #636b7a */
+  /* Lifted from #636b7a: small labels need >= 4.5:1 contrast on #0a0c10. */
+  --color-text-tertiary: 122 131 148;  /* #7a8394 */
 
   --color-border: 255 255 255;
 
@@ -47,7 +48,8 @@
 
   --color-text-primary: 26 26 26;
   --color-text-secondary: 90 95 105;
-  --color-text-tertiary: 140 145 155;
+  /* Darkened from 140 145 155 for >= 4.5:1 contrast on white. */
+  --color-text-tertiary: 108 114 126;
 
   --color-border: 0 0 0;
 

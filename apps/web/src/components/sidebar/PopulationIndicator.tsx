@@ -22,7 +22,7 @@ export function PopulationIndicator({ countryId }: { countryId: string }) {
   }
   if (history.length === 0) {
     return (
-      <p className="text-[10px] text-text-tertiary">Population data unavailable</p>
+      <p className="text-[11px] text-text-tertiary">Population data unavailable</p>
     );
   }
 
@@ -39,7 +39,7 @@ export function PopulationIndicator({ countryId }: { countryId: string }) {
   const growing = changePct !== null && changePct >= 0;
 
   return (
-    <div className="flex items-center justify-between text-[10px]">
+    <div className="flex items-center justify-between text-[11px]">
       <span className="text-text-tertiary">Population</span>
       <span className="text-text-secondary">
         {formatPopulation(latest.population)}

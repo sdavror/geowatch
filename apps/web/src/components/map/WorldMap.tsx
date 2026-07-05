@@ -97,7 +97,7 @@ function populationPopupHtml(country: Country): string {
       `${Math.abs(country.populationYoyPct).toFixed(1)}%</span>`;
   }
   return (
-    `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">` +
+    `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">` +
     `${formatPopulationShort(country.population)}${arrow}</div>`
   );
 }
@@ -361,8 +361,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         }
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
         const html =
-          `<div style="font:600 12px -apple-system,system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
-          `<div style="font:11px -apple-system,system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
+          `<div style="font:600 13px var(--font-inter),system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
+          `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
           populationPopupHtml(country);
         if (!popupRef.current) {
           popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
