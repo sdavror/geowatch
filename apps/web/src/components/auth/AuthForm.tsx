@@ -43,7 +43,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             <Mark size={26} />
             <span className="text-lg font-semibold tracking-wide text-text-primary">Apolitics</span>
           </div>
-          <p className="mt-1 text-[12px] text-text-tertiary">аполітично про політику · без упереджень</p>
+          <p className="mt-1 text-[12px] text-text-tertiary">apolitically about politics · without bias</p>
           <p className="mt-3 text-xs text-text-tertiary">
             {isRegister ? 'Create your account' : 'Sign in to continue'}
           </p>

@@ -6,22 +6,22 @@ import { AuthProvider } from '@/lib/auth';
 
 // Fonts are downloaded at build time and self-hosted — no runtime requests
 // to Google. Inter: tall x-height, stays legible at the small sizes a dense
-// dashboard needs. Lora: serif for long-form article reading. Both include
-// Cyrillic for Ukrainian content.
+// dashboard needs. Lora: serif for long-form article reading. English-only
+// project, so just the latin subset.
 const inter = Inter({
-  subsets: ['latin', 'cyrillic'],
+  subsets: ['latin'],
   variable: '--font-inter',
   display: 'swap',
 });
 const lora = Lora({
-  subsets: ['latin', 'cyrillic'],
+  subsets: ['latin'],
   variable: '--font-lora',
   display: 'swap',
 });
 
-const SITE_TITLE = 'Apolitics — аполітично про політику';
+const SITE_TITLE = 'Apolitics — apolitically about politics';
 const SITE_DESCRIPTION =
-  'Аполітично про політику. Без упереджень: конфлікти, економічна нестабільність і політичні ризики у 201 країні світу — на живій карті та у стрічці новин.';
+  'Apolitically about politics, without bias: conflicts, economic instability, and political risk across 201 countries — on a live map and news feed.';
 
 export const metadata: Metadata = {
   title: SITE_TITLE,

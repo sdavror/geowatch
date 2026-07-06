@@ -1,6 +1,6 @@
 # Apolitics
 
-**Аполітично про політику. Без упереджень.**
+**Apolitically about politics. Without bias.**
 
 Глобальна геополітична інтелігенс-платформа (кодова назва репозиторію — geowatch). Monorepo: Next.js 14 (web) + NestJS (api) + PostgreSQL + Redis.
 

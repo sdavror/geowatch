@@ -60,13 +60,13 @@ export default function HomePage() {
       <NewsListJsonLd articles={articles} />
       {/* Single visible-to-crawlers h1 for the page. Kept off-screen so it
           doesn't duplicate the compact lockup in the header. */}
-      <h1 className="sr-only">Apolitics — аполітично про політику, без упереджень</h1>
+      <h1 className="sr-only">Apolitics — apolitically about politics, without bias</h1>
       <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
         <Logo />
         {/* The slogan lives beside the lockup (not inside the logo) so the
             mark stays legible at any size — brand lockup system. */}
         <span className="hidden whitespace-nowrap text-[12px] text-text-tertiary xl:inline">
-          аполітично про політику
+          apolitically about politics
         </span>
         <CategoryNav active={category} onSelect={handleSelectCategory} />
         <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[11px] text-brand-text">
