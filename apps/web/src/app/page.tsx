@@ -1,152 +1,181 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useCountries } from '@/hooks/useCountries';
 import { useArticles } from '@/hooks/useArticles';
-import { CategoryNav } from '@/components/articles/CategoryNav';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
 import { CategorySection } from '@/components/articles/CategorySection';
 import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
-import { useAuth } from '@/lib/auth';
-import { mediaUrl } from '@/lib/api';
-import { Logo } from '@/components/Logo';
-import Link from 'next/link';
+import { Navbar } from '@/components/nav/Navbar';
+import { Hero } from '@/components/home/Hero';
+import { Newsletter } from '@/components/home/Newsletter';
+import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 
-// Fixed block order on the homepage — most urgent categories first.
-// Change this array to reorder the sections.
+// Section order on the World view — most urgent categories first.
 const CATEGORY_ORDER: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
 
 export default function HomePage() {
   const router = useRouter();
   const [category, setCategory] = useState<EventCategory | null>(null);
+  const [search, setSearch] = useState('');
 
   const { countries } = useCountries();
-  const { user, canEdit } = useAuth();
-  const handleSelectCategory = (next: EventCategory | null) => {
-    setCategory(next);
-  };
-
   const { articles, isLoading, isError } = useArticles();
 
-  // When a category is picked in the nav, show only that block; otherwise
-  // show every category that has stories, in CATEGORY_ORDER.
-  const visibleCategories = category ? [category] : CATEGORY_ORDER;
-  const articlesByCategory = (cat: EventCategory) =>
-    articles.filter((a) => a.category === cat);
-
-  const openArticle = (article: Article) => {
-    // Internal detail page (with comments) rather than the raw source URL —
-    // manually-authored posts have synthetic urls that aren't browsable.
-    router.push(`/news/${article.id}`);
-  };
+  const openArticle = (article: Article) => router.push(`/news/${article.id}`);
 
   const handleSelectCountry = (countryId: string) => {
-    // From a country (map dot / risk index row) jump to its most recent
-    // story if it has one, otherwise open the full map to explore it.
     const match = articles.find((a) => a.countryId === countryId);
-    if (match) {
-      openArticle(match);
-    } else {
-      router.push('/map');
-    }
+    if (match) openArticle(match);
+    else router.push('/map');
   };
 
+  // Search filters the whole pool by title; the category filter narrows the
+  // section list. Hero + sections + "latest" all draw from this view.
+  const view = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let pool = articles;
+    if (q) pool = pool.filter((a) => a.title.toLowerCase().includes(q));
+    if (category) pool = pool.filter((a) => a.category === category);
+    return pool;
+  }, [articles, search, category]);
+
+  const lead = view[0];
+  const secondary = view.slice(1, 3);
+  const heroIds = new Set([lead, ...secondary].filter(Boolean).map((a) => a!.id));
+
+  const latest = useMemo(
+    () =>
+      [...articles]
+        .filter((a) => !heroIds.has(a.id))
+        .sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''))
+        .slice(0, 6),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [articles, lead, secondary.length],
+  );
+
+  const visibleCategories = category ? [category] : CATEGORY_ORDER;
+  const sectionArticles = (cat: EventCategory) =>
+    view.filter((a) => a.category === cat && !heroIds.has(a.id));
+
   return (
-    <main className="flex h-screen flex-col bg-bg">
+    <div className="min-h-screen bg-bg">
       <NewsListJsonLd articles={articles} />
-      {/* Single visible-to-crawlers h1 for the page. Kept off-screen so it
-          doesn't duplicate the compact lockup in the header. */}
       <h1 className="sr-only">Apolitics — apolitically about politics, without bias</h1>
-      <header className="relative flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
-        <Logo />
-        {/* The slogan lives beside the lockup (not inside the logo) so the
-            mark stays legible at any size — brand lockup system. */}
-        <span className="hidden whitespace-nowrap text-[12px] text-text-tertiary xl:inline">
-          apolitically about politics
-        </span>
-        {/* On wide screens the category nav is absolutely centered to the
-            viewport, independent of the side content widths. On narrow
-            screens it falls back to normal flow to avoid overlapping the
-            logo and the right-side actions. */}
-        <div className="lg:pointer-events-none lg:absolute lg:inset-x-0 lg:flex lg:justify-center">
-          <div className="lg:pointer-events-auto">
-            <CategoryNav active={category} onSelect={handleSelectCategory} />
-          </div>
-        </div>
-        <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[11px] text-brand-text">
-          ● LIVE
-        </span>
-        {user ? (
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-brand-text"
-          >
-            {mediaUrl(user.avatarUrl) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={mediaUrl(user.avatarUrl) as string} alt="" className="h-5 w-5 rounded-full object-cover" />
-            ) : null}
-            {canEdit ? 'Admin' : user.displayName || user.email}
-          </Link>
-        ) : (
-          <Link
-            href="/login"
-            className="text-[12px] text-text-tertiary transition-colors hover:text-brand-text"
-          >
-            Sign in
-          </Link>
-        )}
-        <ThemeToggle />
-      </header>
+
+      <Navbar
+        activeCategory={category}
+        onSelectCategory={setCategory}
+        search={search}
+        onSearch={setSearch}
+      />
 
       <BreakingTicker articles={articles} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isError && (
-            <p className="text-xs text-status-conflict">
-              Failed to load articles. Make sure the API is running and reachable at
-              NEXT_PUBLIC_API_URL.
-            </p>
-          )}
+      <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6">
+        {isError && (
+          <p className="rounded-xl bg-status-conflict/10 px-4 py-3 text-sm text-status-conflict">
+            Failed to load stories. Make sure the API is running and reachable.
+          </p>
+        )}
 
-          {isLoading && (
-            <div className="flex justify-center py-10">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-border/10 border-t-accent-blue" />
+        {isLoading && <HomeSkeleton />}
+
+        {!isLoading && !isError && view.length === 0 && (
+          <p className="py-16 text-center text-sm text-text-tertiary">
+            {search ? `No stories match “${search}”.` : 'No stories yet. Check back soon.'}
+          </p>
+        )}
+
+        {!isLoading && view.length > 0 && (
+          <div className="grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-[1fr_320px]">
+            {/* Main column */}
+            <div className="min-w-0">
+              {lead && <Hero lead={lead} secondary={secondary} onOpen={openArticle} />}
+
+              <div className="mt-10 border-t border-border/10 pt-8">
+                <div className={category ? '' : 'grid grid-cols-1 gap-x-8 md:grid-cols-2'}>
+                  {visibleCategories.map((cat) => (
+                    <CategorySection
+                      key={cat}
+                      category={cat}
+                      articles={sectionArticles(cat)}
+                      onOpenArticle={openArticle}
+                      layout={category ? 'full' : 'grid'}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
 
-          {!isLoading && !isError && articles.length === 0 && (
-            <p className="py-10 text-center text-xs text-text-tertiary">
-              No stories yet. Check back soon.
-            </p>
-          )}
-
-          {/* World view arranges the blocks two-up on wide screens (more
-              headlines above the fold); a single selected category spans
-              the full width. Collapses to one column on tablet/mobile. */}
-          <div className={category ? '' : 'grid grid-cols-1 gap-x-6 lg:grid-cols-2'}>
-            {visibleCategories.map((cat) => (
-              <CategorySection
-                key={cat}
-                category={cat}
-                articles={articlesByCategory(cat)}
-                onOpenArticle={openArticle}
-                layout={category ? 'full' : 'grid'}
+            {/* Editorial sidebar */}
+            <aside className="flex flex-col gap-6 lg:sticky lg:top-[104px] lg:h-fit">
+              <RiskSidebar
+                countries={countries}
+                onSelectCountry={handleSelectCountry}
+                onOpenFullMap={() => router.push('/map')}
               />
-            ))}
-          </div>
-        </div>
 
-        <RiskSidebar
-          countries={countries}
-          onSelectCountry={handleSelectCountry}
-          onOpenFullMap={() => router.push('/map')}
-        />
+              <section className="rounded-2xl border border-border/10 bg-bg-2 p-5">
+                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  Latest updates
+                </h3>
+                <ol className="flex flex-col divide-y divide-border/10">
+                  {latest.map((a, i) => (
+                    <li key={a.id}>
+                      <button
+                        onClick={() => openArticle(a)}
+                        className="group flex w-full gap-3 py-3 text-left first:pt-0 last:pb-0"
+                      >
+                        <span className="text-[15px] font-semibold tabular-nums text-brand-text">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span
+                            className="text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}
+                          >
+                            {a.category ? CATEGORY_LABEL[a.category as EventCategory] : 'News'}
+                          </span>
+                          <span className="mt-0.5 block text-[13px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
+                            {a.title}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-text-tertiary">
+                            {formatRelativeTime(a.publishedAt)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+
+              <Newsletter />
+            </aside>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px]">
+      <div>
+        <div className="skeleton aspect-[16/9] w-full rounded-2xl" />
+        <div className="skeleton mt-4 h-8 w-3/4" />
+        <div className="skeleton mt-3 h-4 w-full" />
+        <div className="skeleton mt-2 h-4 w-2/3" />
       </div>
-    </main>
+      <div className="flex flex-col gap-3">
+        <div className="skeleton h-40 w-full rounded-2xl" />
+        <div className="skeleton h-64 w-full rounded-2xl" />
+      </div>
+    </div>
   );
 }

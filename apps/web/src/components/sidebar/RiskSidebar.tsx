@@ -18,7 +18,7 @@ export function RiskSidebar({ countries, onSelectCountry, onOpenFullMap }: RiskS
   const topRisk = [...countries].sort((a, b) => b.riskScore - a.riskScore).slice(0, 6);
 
   return (
-    <aside className="w-64 flex-shrink-0 border-l border-border/10 bg-bg-2 p-4">
+    <aside className="w-full rounded-2xl border border-border/10 bg-bg-2 p-4">
       <div className="mb-4 overflow-hidden rounded-lg border border-border/10 bg-bg">
         <div className="h-28">
           <MiniMap countries={countries} onSelectCountry={onSelectCountry} />
