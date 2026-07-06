@@ -25,10 +25,10 @@ export function RiskSidebar({ countries, onSelectCountry, onOpenFullMap }: RiskS
         </div>
         <button
           onClick={onOpenFullMap}
-          className="flex w-full items-center justify-between px-3 py-2 text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
+          className="group flex w-full items-center justify-between px-3 py-2 text-[12px] text-text-tertiary transition-colors hover:text-brand-text"
         >
           <span>World risk map</span>
-          <span className="text-brand">View ›</span>
+          <span className="text-brand-text group-hover:underline">View ›</span>
         </button>
       </div>
 
@@ -38,9 +38,9 @@ export function RiskSidebar({ countries, onSelectCountry, onOpenFullMap }: RiskS
           <button
             key={c.id}
             onClick={() => onSelectCountry?.(c.id)}
-            className="flex items-center justify-between text-[12px] transition-colors hover:text-text-primary"
+            className="group flex items-center justify-between text-[12px]"
           >
-            <span className="text-text-primary">
+            <span className="text-text-primary transition-colors group-hover:text-brand-text">
               {c.flagEmoji} {c.name}
             </span>
             <span className="font-medium" style={{ color: STATUS_COLOR[c.status] }}>

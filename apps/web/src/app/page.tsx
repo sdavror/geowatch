@@ -83,7 +83,7 @@ export default function HomePage() {
         {user ? (
           <Link
             href="/admin"
-            className="flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
+            className="flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-brand-text"
           >
             {mediaUrl(user.avatarUrl) ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -94,7 +94,7 @@ export default function HomePage() {
         ) : (
           <Link
             href="/login"
-            className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary"
+            className="text-[12px] text-text-tertiary transition-colors hover:text-brand-text"
           >
             Sign in
           </Link>

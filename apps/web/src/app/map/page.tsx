@@ -55,7 +55,7 @@ export default function MapPage() {
       {/* Header */}
       <header className="flex h-11 flex-shrink-0 items-center gap-3 border-b border-border/10 bg-bg-2/70 px-4 backdrop-blur-xl">
         <Logo />
-        <Link href="/" className="text-[12px] text-text-tertiary transition-colors hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary transition-colors hover:text-brand-text">
           ← Back to feed
         </Link>
         <div className="ml-auto flex items-center gap-2">

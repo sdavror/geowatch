@@ -103,7 +103,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           )}
         </p>
         <p className="mt-6 text-center text-[11px] text-text-tertiary">
-          <Link href="/" className="hover:text-text-secondary">
+          <Link href="/" className="hover:text-brand-text">
             ← Back to Apolitics
           </Link>
         </p>

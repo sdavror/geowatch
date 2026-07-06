@@ -79,7 +79,7 @@ export default function AdminPage() {
           <Logo href="/admin" />
           <span className="text-[15px] font-semibold tracking-wide text-text-tertiary">Admin</span>
         </div>
-        <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary hover:text-brand-text">
           ← Site
         </Link>
         <div className="ml-auto flex items-center gap-3">

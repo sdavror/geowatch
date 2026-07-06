@@ -24,8 +24,8 @@ export function CategoryNav({ active, onSelect }: CategoryNavProps) {
           onClick={() => onSelect(c.value)}
           className={
             active === c.value
-              ? 'font-medium text-text-primary'
-              : 'text-text-tertiary transition-colors hover:text-text-secondary'
+              ? 'font-medium text-brand-text underline decoration-brand decoration-2 underline-offset-8'
+              : 'text-text-secondary transition-colors hover:text-brand-text'
           }
         >
           {c.label}

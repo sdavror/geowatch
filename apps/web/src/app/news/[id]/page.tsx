@@ -24,7 +24,7 @@ export default function NewsDetailPage() {
     <main className="min-h-screen bg-bg">
       <header className="flex h-12 items-center gap-4 border-b border-border/10 bg-bg-2/70 px-5 backdrop-blur-xl">
         <Logo />
-        <Link href="/" className="text-[12px] text-text-tertiary hover:text-text-secondary">
+        <Link href="/" className="text-[12px] text-text-tertiary hover:text-brand-text">
           ← Back to feed
         </Link>
       </header>
