@@ -121,14 +121,22 @@ function buildBaseStyle(): StyleSpecification {
   };
 }
 
-// Untracked land uses the --color-map-land token (#0a0c10) — darker than
-// the ocean, matching the original design where water reads as navy and
-// land without data reads as near-black silhouette.
-const UNTRACKED_LAND_FILL = '#0a0c10';
+// Untracked land (Antarctica, Somaliland, N. Cyprus — features with no ISO
+// code we curate) needs a theme-aware neutral: a near-black silhouette on
+// the dark navy ocean, a soft gray on the pale light-theme ocean. A single
+// fixed colour can't do both — pure black looks like a hole punched in the
+// light map. MapLibre fills can't read CSS vars, so we pick per theme.
+const UNTRACKED_LAND_DARK = '#0a0c10';
+const UNTRACKED_LAND_LIGHT = '#c4ccd6';
+
+function isLightTheme(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('light');
+}
 
 // Builds the fill-color match expression: each tracked country's numeric
-// ISO code → its status colour; untracked land → neutral dark fill.
+// ISO code → its status colour; untracked land → theme-aware neutral fill.
 function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecification {
+  const untracked = isLightTheme() ? UNTRACKED_LAND_LIGHT : UNTRACKED_LAND_DARK;
   const alpha2ToNumeric = new Map<string, string>();
   for (const [num, a2] of Object.entries(NUMERIC_TO_ALPHA2)) alpha2ToNumeric.set(a2, num);
 
@@ -139,13 +147,13 @@ function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecificatio
     stops.push(num, STATUS_COLOR[c.status]);
   }
   if (stops.length === 0) {
-    return ['literal', UNTRACKED_LAND_FILL] as unknown as maplibregl.ExpressionSpecification;
+    return ['literal', untracked] as unknown as maplibregl.ExpressionSpecification;
   }
   return [
     'match',
     ['get', ISO_N3],
     ...stops,
-    UNTRACKED_LAND_FILL,
+    untracked,
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -402,6 +410,23 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       if (map.getLayer(id)) map.setFilter(id, conflictFilter);
     }
   }, [countries]);
+
+  // Re-tint untracked land when the light/dark theme toggles (the fill is a
+  // baked expression MapLibre can't recompute from CSS on its own).
+  useEffect(() => {
+    const html = document.documentElement;
+    const observer = new MutationObserver(() => {
+      const map = mapRef.current;
+      if (!map || !loadedRef.current || !map.getLayer('countries-fill')) return;
+      map.setPaintProperty(
+        'countries-fill',
+        'fill-color',
+        buildFillColor(countriesRef.current),
+      );
+    });
+    observer.observe(html, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Update selected outline + glide the camera to the chosen country.
   useEffect(() => {
