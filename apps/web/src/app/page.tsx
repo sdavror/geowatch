@@ -61,14 +61,22 @@ export default function HomePage() {
       {/* Single visible-to-crawlers h1 for the page. Kept off-screen so it
           doesn't duplicate the compact lockup in the header. */}
       <h1 className="sr-only">Apolitics — apolitically about politics, without bias</h1>
-      <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
+      <header className="relative flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
         <Logo />
         {/* The slogan lives beside the lockup (not inside the logo) so the
             mark stays legible at any size — brand lockup system. */}
         <span className="hidden whitespace-nowrap text-[12px] text-text-tertiary xl:inline">
           apolitically about politics
         </span>
-        <CategoryNav active={category} onSelect={handleSelectCategory} />
+        {/* On wide screens the category nav is absolutely centered to the
+            viewport, independent of the side content widths. On narrow
+            screens it falls back to normal flow to avoid overlapping the
+            logo and the right-side actions. */}
+        <div className="lg:pointer-events-none lg:absolute lg:inset-x-0 lg:flex lg:justify-center">
+          <div className="lg:pointer-events-auto">
+            <CategoryNav active={category} onSelect={handleSelectCategory} />
+          </div>
+        </div>
         <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[11px] text-brand-text">
           ● LIVE
         </span>
