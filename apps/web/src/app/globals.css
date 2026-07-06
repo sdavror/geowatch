@@ -109,6 +109,27 @@ select:focus-visible {
   100% { transform: translateX(-100%); }
 }
 
+/* Gentle content entrance — used on route/page mounts. */
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadein 0.3s ease both;
+}
+
+/* Respect users who prefer less motion (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ── Map: ocean & chrome ──────────────────────────────────────────
    Dark theme layers an ambient texture under the ocean tint; light
    theme keeps the plain gradient. */

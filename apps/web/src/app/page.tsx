@@ -11,6 +11,7 @@ import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import { Navbar } from '@/components/nav/Navbar';
 import { Hero } from '@/components/home/Hero';
 import { Newsletter } from '@/components/home/Newsletter';
+import { MarketsWidget } from '@/components/home/MarketsWidget';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
@@ -83,7 +84,7 @@ export default function HomePage() {
         )}
 
         {!isLoading && view.length > 0 && (
-          <div className="grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-[1fr_320px]">
+          <div className="animate-in grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-[1fr_320px]">
             {/* Main column */}
             <div className="min-w-0">
               {lead && <Hero lead={lead} secondary={secondary} onOpen={openArticle} />}
@@ -144,6 +145,8 @@ export default function HomePage() {
                   ))}
                 </ol>
               </section>
+
+              <MarketsWidget countries={countries} />
 
               <Newsletter />
             </aside>
