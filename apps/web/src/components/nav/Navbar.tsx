@@ -5,20 +5,21 @@ import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
-import { CATEGORY_LABEL } from '@geowatch/shared-types';
 import type { EventCategory } from '@geowatch/shared-types';
+import { CATEGORY_TO_SLUG, CATEGORY_NAV_LABEL, NAV_ORDER } from '@/lib/categories';
 
-const NAV_CATEGORIES: Array<{ label: string; value: EventCategory | null }> = [
-  { label: 'World', value: null },
-  { label: 'Conflict', value: 'military' },
-  { label: 'Economy', value: 'economic' },
-  { label: 'Politics', value: 'political' },
-  { label: 'Humanitarian', value: 'humanitarian' },
+const NAV_LINKS: Array<{ label: string; href: string; value: EventCategory | null }> = [
+  { label: 'World', href: '/', value: null },
+  ...NAV_ORDER.map((c) => ({
+    label: CATEGORY_NAV_LABEL[c],
+    href: `/category/${CATEGORY_TO_SLUG[c]}`,
+    value: c,
+  })),
 ];
 
 interface NavbarProps {
-  activeCategory: EventCategory | null;
-  onSelectCategory: (c: EventCategory | null) => void;
+  // Highlights the current section; null = the World front page.
+  active: EventCategory | null;
   search: string;
   onSearch: (q: string) => void;
 }
@@ -36,7 +37,7 @@ function Icon({ path, label }: { path: string; label: string }) {
  * controls) and a category bar. Backdrop-blurred, hairline-bordered, with
  * the brand blue as the single accent.
  */
-export function Navbar({ activeCategory, onSelectCategory, search, onSearch }: NavbarProps) {
+export function Navbar({ active, search, onSearch }: NavbarProps) {
   const { user, canEdit } = useAuth();
 
   return (
@@ -108,12 +109,12 @@ export function Navbar({ activeCategory, onSelectCategory, search, onSearch }: N
 
       {/* Category bar */}
       <nav className="mx-auto flex max-w-[1400px] items-center gap-1 overflow-x-auto px-4 sm:px-6">
-        {NAV_CATEGORIES.map((c) => {
-          const isActive = activeCategory === c.value;
+        {NAV_LINKS.map((c) => {
+          const isActive = active === c.value;
           return (
-            <button
+            <Link
               key={c.label}
-              onClick={() => onSelectCategory(c.value)}
+              href={c.href}
               className={`relative whitespace-nowrap px-3 py-2.5 text-[13px] transition-colors ${
                 isActive
                   ? 'font-semibold text-text-primary'
@@ -124,7 +125,7 @@ export function Navbar({ activeCategory, onSelectCategory, search, onSearch }: N
               {isActive && (
                 <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-brand" />
               )}
-            </button>
+            </Link>
           );
         })}
         <Link
@@ -137,5 +138,3 @@ export function Navbar({ activeCategory, onSelectCategory, search, onSearch }: N
     </header>
   );
 }
-
-export { CATEGORY_LABEL };

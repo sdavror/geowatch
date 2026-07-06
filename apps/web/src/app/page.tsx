@@ -20,7 +20,6 @@ const CATEGORY_ORDER: EventCategory[] = ['military', 'economic', 'political', 'h
 
 export default function HomePage() {
   const router = useRouter();
-  const [category, setCategory] = useState<EventCategory | null>(null);
   const [search, setSearch] = useState('');
 
   const { countries } = useCountries();
@@ -34,15 +33,13 @@ export default function HomePage() {
     else router.push('/map');
   };
 
-  // Search filters the whole pool by title; the category filter narrows the
-  // section list. Hero + sections + "latest" all draw from this view.
+  // The World front page shows every section; search narrows the whole pool
+  // by title. Drilling into a single category uses /category/[slug].
   const view = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let pool = articles;
-    if (q) pool = pool.filter((a) => a.title.toLowerCase().includes(q));
-    if (category) pool = pool.filter((a) => a.category === category);
-    return pool;
-  }, [articles, search, category]);
+    if (!q) return articles;
+    return articles.filter((a) => a.title.toLowerCase().includes(q));
+  }, [articles, search]);
 
   const lead = view[0];
   const secondary = view.slice(1, 3);
@@ -58,7 +55,6 @@ export default function HomePage() {
     [articles, lead, secondary.length],
   );
 
-  const visibleCategories = category ? [category] : CATEGORY_ORDER;
   const sectionArticles = (cat: EventCategory) =>
     view.filter((a) => a.category === cat && !heroIds.has(a.id));
 
@@ -67,12 +63,7 @@ export default function HomePage() {
       <NewsListJsonLd articles={articles} />
       <h1 className="sr-only">Apolitics — apolitically about politics, without bias</h1>
 
-      <Navbar
-        activeCategory={category}
-        onSelectCategory={setCategory}
-        search={search}
-        onSearch={setSearch}
-      />
+      <Navbar active={null} search={search} onSearch={setSearch} />
 
       <BreakingTicker articles={articles} />
 
@@ -98,14 +89,14 @@ export default function HomePage() {
               {lead && <Hero lead={lead} secondary={secondary} onOpen={openArticle} />}
 
               <div className="mt-10 border-t border-border/10 pt-8">
-                <div className={category ? '' : 'grid grid-cols-1 gap-x-8 md:grid-cols-2'}>
-                  {visibleCategories.map((cat) => (
+                <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+                  {CATEGORY_ORDER.map((cat) => (
                     <CategorySection
                       key={cat}
                       category={cat}
                       articles={sectionArticles(cat)}
                       onOpenArticle={openArticle}
-                      layout={category ? 'full' : 'grid'}
+                      layout="grid"
                     />
                   ))}
                 </div>
