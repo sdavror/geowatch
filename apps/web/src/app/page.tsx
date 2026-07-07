@@ -12,6 +12,7 @@ import { Navbar } from '@/components/nav/Navbar';
 import { Hero } from '@/components/home/Hero';
 import { Newsletter } from '@/components/home/Newsletter';
 import { MarketsWidget } from '@/components/home/MarketsWidget';
+import { WeatherWidget } from '@/components/home/WeatherWidget';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
@@ -147,6 +148,8 @@ export default function HomePage() {
               </section>
 
               <MarketsWidget countries={countries} />
+
+              <WeatherWidget />
 
               <Newsletter />
             </aside>
