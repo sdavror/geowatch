@@ -36,15 +36,46 @@ interface CountryFeature {
   properties: Record<string, unknown>;
 }
 
+// Features that cross the antimeridian (Russia, Fiji) have rings whose
+// longitudes jump from +180 to -180 mid-ring. Rendered naively, that jump
+// draws a fill band across the entire map. Unwrapping keeps each ring
+// continuous (letting longitudes exceed ±180), which MapLibre renders
+// correctly on the adjacent world copy.
+function unwrapRing(ring: number[][]): void {
+  for (let i = 1; i < ring.length; i++) {
+    const prevLon = ring[i - 1][0];
+    let lon = ring[i][0];
+    while (lon - prevLon > 180) lon -= 360;
+    while (lon - prevLon < -180) lon += 360;
+    ring[i] = [lon, ring[i][1]];
+  }
+}
+
+function unwrapAntimeridian(geometry: {
+  type: string;
+  coordinates: unknown;
+}): void {
+  if (geometry.type === 'Polygon') {
+    for (const ring of geometry.coordinates as number[][][]) unwrapRing(ring);
+  } else if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.coordinates as number[][][][]) {
+      for (const ring of polygon) unwrapRing(ring);
+    }
+  }
+}
+
 // Compact GDP label — "$178B" / "$2.0T".
 function formatGdpShort(usd: number): string {
   if (usd >= 1_000_000_000_000) return `$${(usd / 1_000_000_000_000).toFixed(1)}T`;
   return `$${Math.round(usd / 1_000_000_000)}B`;
 }
 
-// Minimal MapLibre style: an ocean-coloured background and an empty
-// GeoJSON source we populate once the world data loads. Colours pull from
-// the same CSS variables the old SVG map used, resolved to hex at runtime.
+// Minimal MapLibre style: a transparent background and an empty GeoJSON
+// source we populate once the world data loads. The background is left
+// transparent on purpose — the "globe in space" radial gradient (ocean)
+// is painted underneath by the wrapping div using the --color-map-gradient-*
+// CSS variables, since MapLibre's background layer only supports flat
+// colours/patterns, not CSS gradients.
 function buildBaseStyle(): StyleSpecification {
   return {
     version: 8,
@@ -53,10 +84,15 @@ function buildBaseStyle(): StyleSpecification {
       world: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },
     layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': '#0c1018' } },
+      { id: 'bg', type: 'background', paint: { 'background-color': '#000000', 'background-opacity': 0 } },
     ],
   };
 }
+
+// Untracked land uses the --color-map-land token (#0a0c10) — darker than
+// the ocean, matching the original design where water reads as navy and
+// land without data reads as near-black silhouette.
+const UNTRACKED_LAND_FILL = '#0a0c10';
 
 // Builds the fill-color match expression: each tracked country's numeric
 // ISO code → its status colour; untracked land → neutral dark fill.
@@ -71,13 +107,13 @@ function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecificatio
     stops.push(num, STATUS_COLOR[c.status]);
   }
   if (stops.length === 0) {
-    return ['literal', '#1d222c'] as unknown as maplibregl.ExpressionSpecification;
+    return ['literal', UNTRACKED_LAND_FILL] as unknown as maplibregl.ExpressionSpecification;
   }
   return [
     'match',
     ['get', ISO_N3],
     ...stops,
-    '#1d222c',
+    UNTRACKED_LAND_FILL,
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -188,7 +224,12 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
           };
           for (const f of fc.features) {
             f.properties = f.properties ?? {};
-            f.properties[ISO_N3] = String(f.id ?? '');
+            // Topojson ids are zero-padded 3-digit strings ("032" = Argentina)
+            // while NUMERIC_TO_ALPHA2 keys are unpadded — canonicalize here so
+            // every country with a numeric code < 100 actually matches.
+            const rawId = String(f.id ?? '');
+            f.properties[ISO_N3] = /^-?\d+$/.test(rawId) ? String(parseInt(rawId, 10)) : rawId;
+            unwrapAntimeridian(f.geometry as { type: string; coordinates: unknown });
           }
           const src = map.getSource('world') as maplibregl.GeoJSONSource | undefined;
           src?.setData(fc as unknown as GeoJSON.FeatureCollection);
@@ -265,7 +306,16 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
   }, [selectedCountryId]);
 
   return (
-    <div className="relative h-full w-full bg-bg">
+    <div
+      className="relative h-full w-full"
+      style={{
+        // Ocean: navy water tokens (--color-map-ocean-*), subtly vignetted
+        // toward the edges. Painted here in CSS (not in the MapLibre style)
+        // so it stays theme-aware via the CSS variables.
+        background:
+          'radial-gradient(ellipse at 50% 40%, rgb(var(--color-map-ocean-1)) 0%, rgb(var(--color-map-ocean-2)) 100%)',
+      }}
+    >
       <div ref={mapContainer} className="absolute inset-0 h-full w-full" />
     </div>
   );
