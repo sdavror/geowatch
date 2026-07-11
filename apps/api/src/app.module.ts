@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,6 +12,7 @@ import { GdpModule } from './gdp/gdp.module';
 import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
 import { CommentsModule } from './comments/comments.module';
+import { IngestionModule } from './ingestion/ingestion.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -21,6 +23,7 @@ import { validateEnv } from './config/env.validation';
       validate: validateEnv,
       envFilePath: ['.env.local', '.env'],
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60_000, // 1 minute window
@@ -36,6 +39,7 @@ import { validateEnv } from './config/env.validation';
     CountriesModule,
     ArticlesModule,
     GdpModule,
+    IngestionModule,
   ],
   providers: [
     {
