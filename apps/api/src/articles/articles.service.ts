@@ -86,13 +86,30 @@ export class ArticlesService {
   // Editors and the owner manage the news catalogue here. The admin list
   // shows drafts too (unlike the public feed, which is published-only).
 
-  async findAllAdmin() {
+  /**
+   * `published` filters the moderation queue. Pending items sort oldest
+   * first (FIFO — a queue, not a feed) so nothing sits unseen forever once
+   * ingestion volume exceeds the page size; published items sort newest
+   * first, matching how editors actually want to review each view.
+   */
+  async findAllAdmin(published?: boolean) {
     const articles = await this.prisma.article.findMany({
-      orderBy: { createdAt: 'desc' },
+      where: published === undefined ? undefined : { published },
+      orderBy: { createdAt: published === false ? 'asc' : 'desc' },
       take: 200,
       include: { country: true },
     });
     return articles.map((a) => this.serializeArticle(a, true));
+  }
+
+  /** Counts for the admin queue tabs — cheap enough to run alongside the list. */
+  async countAdmin() {
+    const [pending, published, total] = await Promise.all([
+      this.prisma.article.count({ where: { published: false } }),
+      this.prisma.article.count({ where: { published: true } }),
+      this.prisma.article.count(),
+    ]);
+    return { pending, published, total };
   }
 
   async create(input: {

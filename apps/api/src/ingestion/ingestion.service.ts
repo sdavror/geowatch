@@ -174,7 +174,11 @@ export class IngestionService implements OnModuleInit {
           publishedAt: item.publishedAt,
           category: category ?? undefined,
           contentHash: hash,
-          published: true,
+          // Ingested stories land in the moderation queue, not live — no
+          // AI/human review has looked at them yet, and an unmoderated feed
+          // is a real brand risk for a site whose whole premise is "without
+          // bias". An editor approves (Publish) via the existing admin queue.
+          published: false,
           tags: [],
         },
       });
