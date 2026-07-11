@@ -3,12 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useCountries } from '@/hooks/useCountries';
-import { useArticles } from '@/hooks/useArticles';
+import { useArticles, useMostRead } from '@/hooks/useArticles';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
 import { CategorySection } from '@/components/articles/CategorySection';
 import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import { Navbar } from '@/components/nav/Navbar';
+import { Footer } from '@/components/nav/Footer';
 import { Hero } from '@/components/home/Hero';
 import { Newsletter } from '@/components/home/Newsletter';
 import { MarketsWidget } from '@/components/home/MarketsWidget';
@@ -26,6 +27,7 @@ export default function HomePage() {
 
   const { countries } = useCountries();
   const { articles, isLoading, isError } = useArticles();
+  const { articles: mostRead } = useMostRead();
 
   const openArticle = (article: Article) => router.push(`/news/${article.id}`);
 
@@ -113,39 +115,13 @@ export default function HomePage() {
                 onOpenFullMap={() => router.push('/map')}
               />
 
-              <section className="rounded-2xl border border-border/10 bg-bg-2 p-5">
-                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-                  Latest updates
-                </h3>
-                <ol className="flex flex-col divide-y divide-border/10">
-                  {latest.map((a, i) => (
-                    <li key={a.id}>
-                      <button
-                        onClick={() => openArticle(a)}
-                        className="group flex w-full gap-3 py-3 text-left first:pt-0 last:pb-0"
-                      >
-                        <span className="text-[15px] font-semibold tabular-nums text-brand-text">
-                          {i + 1}
-                        </span>
-                        <span className="min-w-0">
-                          <span
-                            className="text-[10px] font-semibold uppercase tracking-wider"
-                            style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}
-                          >
-                            {a.category ? CATEGORY_LABEL[a.category as EventCategory] : 'News'}
-                          </span>
-                          <span className="mt-0.5 block text-[13px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
-                            {a.title}
-                          </span>
-                          <span className="mt-1 block text-[11px] text-text-tertiary">
-                            {formatRelativeTime(a.publishedAt)}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </section>
+              {/* Most read needs real traffic to be meaningful — stays
+                  hidden rather than showing a near-empty ranked list. */}
+              {mostRead.length >= 3 && (
+                <RankedList title="Most read" articles={mostRead} onOpen={openArticle} />
+              )}
+
+              <RankedList title="Latest updates" articles={latest} onOpen={openArticle} />
 
               <MarketsWidget countries={countries} />
 
@@ -156,7 +132,55 @@ export default function HomePage() {
           </div>
         )}
       </main>
+
+      <Footer />
     </div>
+  );
+}
+
+/** Numbered ranked-list card shared by "Most read" and "Latest updates". */
+function RankedList({
+  title,
+  articles,
+  onOpen,
+}: {
+  title: string;
+  articles: Article[];
+  onOpen: (a: Article) => void;
+}) {
+  if (articles.length === 0) return null;
+  return (
+    <section className="rounded-2xl border border-border/10 bg-bg-2 p-5">
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+        {title}
+      </h3>
+      <ol className="flex flex-col divide-y divide-border/10">
+        {articles.map((a, i) => (
+          <li key={a.id}>
+            <button
+              onClick={() => onOpen(a)}
+              className="group flex w-full gap-3 py-3 text-left first:pt-0 last:pb-0"
+            >
+              <span className="text-[15px] font-semibold tabular-nums text-brand-text">{i + 1}</span>
+              <span className="min-w-0">
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}
+                >
+                  {a.category ? CATEGORY_LABEL[a.category as EventCategory] : 'News'}
+                </span>
+                <span className="mt-0.5 block text-[13px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
+                  {a.title}
+                </span>
+                <span className="mt-1 block text-[11px] text-text-tertiary">
+                  {formatRelativeTime(a.publishedAt)}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

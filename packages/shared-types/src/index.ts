@@ -135,6 +135,8 @@ export interface Article {
   published?: boolean;
   fetchedAt?: string;
   createdAt?: string;
+  // Only present on GET /articles/most-read responses.
+  viewCount?: number;
 }
 
 // ─────────────────────────────────────────────

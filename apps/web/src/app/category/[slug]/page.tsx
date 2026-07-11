@@ -8,6 +8,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useArticles } from '@/hooks/useArticles';
 import { Navbar } from '@/components/nav/Navbar';
+import { Footer } from '@/components/nav/Footer';
 import { StoryCard, staggerContainer } from '@/components/article/StoryCard';
 import { Hero } from '@/components/home/Hero';
 import { SLUG_TO_CATEGORY, CATEGORY_INTRO, CATEGORY_NAV_LABEL } from '@/lib/categories';
@@ -47,6 +48,7 @@ export default function CategoryPage() {
             ← Back to the front page
           </Link>
         </div>
+        <Footer />
       </div>
     );
   }
@@ -124,6 +126,8 @@ export default function CategoryPage() {
           </>
         )}
       </main>
+
+      <Footer />
     </div>
   );
 }
