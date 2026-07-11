@@ -36,11 +36,18 @@ interface CountryFeature {
   properties: Record<string, unknown>;
 }
 
+// ── Antimeridian handling ─────────────────────────────────────────────
 // Features that cross the antimeridian (Russia, Fiji) have rings whose
 // longitudes jump from +180 to -180 mid-ring. Rendered naively, that jump
-// draws a fill band across the entire map. Unwrapping keeps each ring
-// continuous (letting longitudes exceed ±180), which MapLibre renders
-// correctly on the adjacent world copy.
+// draws a fill band across the whole map. We "unwrap" each ring so it's
+// continuous — letting longitudes exceed ±180 — and let MapLibre render
+// the overflow on the adjacent world copy (renderWorldCopies: true). A
+// dynamic minZoom keeps a single world filling the viewport, so those
+// copies never actually show as duplicated continents.
+//
+// (An earlier version clipped the rings to ±180 to run without world
+// copies, but Sutherland–Hodgman clipping produces sliver triangles on
+// concave polygons like Russia — the artifacts this replaces.)
 function unwrapRing(ring: number[][]): void {
   for (let i = 1; i < ring.length; i++) {
     const prevLon = ring[i - 1][0];
@@ -51,10 +58,7 @@ function unwrapRing(ring: number[][]): void {
   }
 }
 
-function unwrapAntimeridian(geometry: {
-  type: string;
-  coordinates: unknown;
-}): void {
+function unwrapAntimeridian(geometry: { type: string; coordinates: unknown }): void {
   if (geometry.type === 'Polygon') {
     for (const ring of geometry.coordinates as number[][][]) unwrapRing(ring);
   } else if (geometry.type === 'MultiPolygon') {
@@ -68,6 +72,34 @@ function unwrapAntimeridian(geometry: {
 function formatGdpShort(usd: number): string {
   if (usd >= 1_000_000_000_000) return `$${(usd / 1_000_000_000_000).toFixed(1)}T`;
   return `$${Math.round(usd / 1_000_000_000)}B`;
+}
+
+// Compact population label — "36.7M" / "1.43B".
+function formatPopulationShort(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+// Population row for the hover popup: value plus an up/down arrow with the
+// change vs the previous year (green growth / red decline).
+function populationPopupHtml(country: Country): string {
+  if (country.population === null) return '';
+  let arrow = '';
+  // typeof check (not just !== null): a stale SWR cache from an older API
+  // build may lack the field entirely.
+  if (typeof country.populationYoyPct === 'number') {
+    const up = country.populationYoyPct >= 0;
+    const color = up ? '#3ecf8e' : '#e84545';
+    arrow =
+      ` <span style="color:${color};">${up ? '▲' : '▼'} ` +
+      `${Math.abs(country.populationYoyPct).toFixed(1)}%</span>`;
+  }
+  return (
+    `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">` +
+    `${formatPopulationShort(country.population)}${arrow}</div>`
+  );
 }
 
 // Minimal MapLibre style: a transparent background and an empty GeoJSON
@@ -89,14 +121,22 @@ function buildBaseStyle(): StyleSpecification {
   };
 }
 
-// Untracked land uses the --color-map-land token (#0a0c10) — darker than
-// the ocean, matching the original design where water reads as navy and
-// land without data reads as near-black silhouette.
-const UNTRACKED_LAND_FILL = '#0a0c10';
+// Untracked land (Antarctica, Somaliland, N. Cyprus — features with no ISO
+// code we curate) needs a theme-aware neutral: a near-black silhouette on
+// the dark navy ocean, a soft gray on the pale light-theme ocean. A single
+// fixed colour can't do both — pure black looks like a hole punched in the
+// light map. MapLibre fills can't read CSS vars, so we pick per theme.
+const UNTRACKED_LAND_DARK = '#0a0c10';
+const UNTRACKED_LAND_LIGHT = '#c4ccd6';
+
+function isLightTheme(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('light');
+}
 
 // Builds the fill-color match expression: each tracked country's numeric
-// ISO code → its status colour; untracked land → neutral dark fill.
+// ISO code → its status colour; untracked land → theme-aware neutral fill.
 function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecification {
+  const untracked = isLightTheme() ? UNTRACKED_LAND_LIGHT : UNTRACKED_LAND_DARK;
   const alpha2ToNumeric = new Map<string, string>();
   for (const [num, a2] of Object.entries(NUMERIC_TO_ALPHA2)) alpha2ToNumeric.set(a2, num);
 
@@ -107,13 +147,13 @@ function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecificatio
     stops.push(num, STATUS_COLOR[c.status]);
   }
   if (stops.length === 0) {
-    return ['literal', UNTRACKED_LAND_FILL] as unknown as maplibregl.ExpressionSpecification;
+    return ['literal', untracked] as unknown as maplibregl.ExpressionSpecification;
   }
   return [
     'match',
     ['get', ISO_N3],
     ...stops,
-    UNTRACKED_LAND_FILL,
+    untracked,
   ] as unknown as maplibregl.ExpressionSpecification;
 }
 
@@ -133,6 +173,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
   const loadedRef = useRef(false);
   const dataReadyRef = useRef(false);
   const popupRef = useRef<InstanceType<typeof maplibregl.Popup> | null>(null);
+  const pulseFrameRef = useRef<number | null>(null);
+  const hoveredIsoRef = useRef<string | null>(null);
   const countriesRef = useRef(countries);
   const onSelectRef = useRef(onSelectCountry);
   countriesRef.current = countries;
@@ -147,16 +189,31 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       style: buildBaseStyle(),
       center: [20, 30],
       zoom: 1.4,
-      minZoom: 1,
       maxZoom: 8,
       attributionControl: false,
+      // World copies render antimeridian-crossing polygons (Russia, Fiji)
+      // correctly across the seam. lockToOneWorld() below then pins minZoom
+      // so a single world always fills the viewport — the copies stay
+      // off-screen, so no duplicated continents.
       renderWorldCopies: true,
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
+    // Pin minZoom to the zoom at which one world exactly fills the viewport
+    // width, so the user can never zoom out far enough to see a second copy.
+    // Recomputed on resize. worldPx = 512 * 2^zoom (MapLibre's 512 tiles).
+    const lockToOneWorld = () => {
+      const w = map.getContainer().clientWidth || 1;
+      const fillZoom = Math.log2(w / 512);
+      map.setMinZoom(fillZoom);
+      if (map.getZoom() < fillZoom) map.setZoom(fillZoom);
+    };
+
     map.on('load', () => {
       loadedRef.current = true;
+      lockToOneWorld();
+      map.on('resize', lockToOneWorld);
 
       // Untracked-land fill (drawn first, under the choropleth match — the
       // match itself already handles both, so this single fill layer covers
@@ -179,6 +236,25 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         source: 'world',
         paint: { 'line-color': '#343b48', 'line-width': 0.5 },
       });
+
+      // Subtle hover brightening — the country under the cursor lifts,
+      // Apple-style. Driven by a filter swap on mousemove; the opacity
+      // transition makes it fade in/out instead of snapping.
+      map.addLayer({
+        id: 'countries-hover',
+        type: 'fill',
+        source: 'world',
+        filter: ['==', ['get', ISO_N3], '___none___'],
+        paint: {
+          'fill-color': '#ffffff',
+          'fill-opacity': 0.08,
+        },
+      });
+      // Fade the hover fill in/out instead of snapping. Transitions aren't
+      // part of the addLayer paint typing, so set it separately.
+      map.setPaintProperty('countries-hover', 'fill-opacity-transition', {
+        duration: 150,
+      } as never);
 
       // Neon conflict glow: wide soft halo + thin bright core.
       const glow = [
@@ -206,14 +282,37 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
         });
       }
 
-      // Selected-country white outline.
+      // Selected country: soft white halo + thin crisp core — reads like
+      // a focus ring rather than a hard cartographic border.
+      map.addLayer({
+        id: 'selected-halo',
+        type: 'line',
+        source: 'world',
+        filter: ['==', ['get', ISO_N3], '___none___'],
+        paint: { 'line-color': '#ffffff', 'line-width': 8, 'line-opacity': 0.25, 'line-blur': 6 },
+      });
       map.addLayer({
         id: 'selected-outline',
         type: 'line',
         source: 'world',
         filter: ['==', ['get', ISO_N3], '___none___'],
-        paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-opacity': 0.95 },
+        paint: { 'line-color': '#ffffff', 'line-width': 1.5, 'line-opacity': 0.9 },
       });
+
+      // Gentle breathing pulse on the conflict glow (~4s cycle). Restrained
+      // amplitude on purpose — it should read as "alive", not as blinking.
+      const pulseStart = performance.now();
+      const pulse = (now: number) => {
+        const k = (Math.sin(((now - pulseStart) / 4000) * Math.PI * 2) + 1) / 2;
+        if (map.getLayer('conflict-glow-outer')) {
+          map.setPaintProperty('conflict-glow-outer', 'line-opacity', 0.15 + 0.2 * k);
+        }
+        if (map.getLayer('conflict-glow-mid')) {
+          map.setPaintProperty('conflict-glow-mid', 'line-opacity', 0.3 + 0.25 * k);
+        }
+        pulseFrameRef.current = requestAnimationFrame(pulse);
+      };
+      pulseFrameRef.current = requestAnimationFrame(pulse);
 
       // Load world geometry, copy numeric id into properties, feed the source.
       fetch(GEO_URL)
@@ -248,21 +347,33 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
       map.on('mouseleave', 'countries-fill', () => {
         map.getCanvas().style.cursor = '';
         popupRef.current?.remove();
+        hoveredIsoRef.current = null;
+        if (map.getLayer('countries-hover')) {
+          map.setFilter('countries-hover', ['==', ['get', ISO_N3], '___none___']);
+        }
       });
       map.on('mousemove', 'countries-fill', (e: MapLayerMouseEvent) => {
         const num = e.features?.[0]?.properties?.[ISO_N3] as string | undefined;
         const a2 = num ? NUMERIC_TO_ALPHA2[num] : undefined;
         const country = a2 ? countriesRef.current.find((c) => c.id === a2) : undefined;
+
+        const hoverTarget = country && num ? num : '___none___';
+        if (hoveredIsoRef.current !== hoverTarget && map.getLayer('countries-hover')) {
+          hoveredIsoRef.current = hoverTarget;
+          map.setFilter('countries-hover', ['==', ['get', ISO_N3], hoverTarget]);
+        }
+
         if (!country) {
           popupRef.current?.remove();
           return;
         }
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
         const html =
-          `<div style="font:600 12px system-ui;color:#fff;">${country.name}</div>` +
-          `<div style="font:11px system-ui;color:#9aa3b2;">${country.status}${gdp}</div>`;
+          `<div style="font:600 13px var(--font-inter),system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
+          `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
+          populationPopupHtml(country);
         if (!popupRef.current) {
-          popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+          popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         }
         popupRef.current.setLngLat(e.lngLat).setHTML(html).addTo(map);
       });
@@ -274,6 +385,8 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
     });
 
     return () => {
+      if (pulseFrameRef.current !== null) cancelAnimationFrame(pulseFrameRef.current);
+      pulseFrameRef.current = null;
       popupRef.current?.remove();
       popupRef.current = null;
       map.remove();
@@ -298,31 +411,53 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
     }
   }, [countries]);
 
-  // Update selected outline.
+  // Re-tint untracked land when the light/dark theme toggles (the fill is a
+  // baked expression MapLibre can't recompute from CSS on its own).
+  useEffect(() => {
+    const html = document.documentElement;
+    const observer = new MutationObserver(() => {
+      const map = mapRef.current;
+      if (!map || !loadedRef.current || !map.getLayer('countries-fill')) return;
+      map.setPaintProperty(
+        'countries-fill',
+        'fill-color',
+        buildFillColor(countriesRef.current),
+      );
+    });
+    observer.observe(html, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  // Update selected outline + glide the camera to the chosen country.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     applySelected(map, selectedCountryId);
+
+    if (selectedCountryId) {
+      const country = countriesRef.current.find((c) => c.id === selectedCountryId);
+      if (country && country.latitude !== null && country.longitude !== null) {
+        map.flyTo({
+          center: [country.longitude, country.latitude],
+          zoom: Math.max(map.getZoom(), 2.6),
+          duration: 1400,
+          curve: 1.6,
+          essential: true,
+        });
+      }
+    }
   }, [selectedCountryId]);
 
   return (
-    <div
-      className="relative h-full w-full"
-      style={{
-        // Ocean: navy water tokens (--color-map-ocean-*), subtly vignetted
-        // toward the edges. Painted here in CSS (not in the MapLibre style)
-        // so it stays theme-aware via the CSS variables.
-        background:
-          'radial-gradient(ellipse at 50% 40%, rgb(var(--color-map-ocean-1)) 0%, rgb(var(--color-map-ocean-2)) 100%)',
-      }}
-    >
+    // Ocean backdrop lives in the .map-ocean CSS class (theme-aware
+    // gradient + ambient texture in dark mode) — see globals.css.
+    <div className="map-ocean relative h-full w-full">
       <div ref={mapContainer} className="absolute inset-0 h-full w-full" />
     </div>
   );
 }
 
 function applySelected(map: InstanceType<typeof maplibregl.Map>, selectedId: string | null) {
-  if (!map.getLayer('selected-outline')) return;
   let num = '___none___';
   if (selectedId) {
     for (const [n, a2] of Object.entries(NUMERIC_TO_ALPHA2)) {
@@ -332,5 +467,9 @@ function applySelected(map: InstanceType<typeof maplibregl.Map>, selectedId: str
       }
     }
   }
-  map.setFilter('selected-outline', ['==', ['get', ISO_N3], num]);
+  for (const layerId of ['selected-outline', 'selected-halo']) {
+    if (map.getLayer(layerId)) {
+      map.setFilter(layerId, ['==', ['get', ISO_N3], num]);
+    }
+  }
 }

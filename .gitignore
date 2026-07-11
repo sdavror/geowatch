@@ -11,3 +11,4 @@ prisma/generated
 coverage
 .DS_Store
 *.log
+*.tsbuildinfo

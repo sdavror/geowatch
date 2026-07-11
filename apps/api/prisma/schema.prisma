@@ -62,12 +62,45 @@ model Country {
   updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at")
   createdAt      DateTime      @default(now()) @map("created_at")
 
-  events     Event[]
-  articles   Article[]
-  riskScores RiskScoreHistory[]
+  events            Event[]
+  articles          Article[]
+  riskScores        RiskScoreHistory[]
+  gdpHistory        GdpHistory[]
+  populationHistory PopulationHistory[]
 
   @@map("countries")
   @@index([status])
+}
+
+// Annual GDP per country, parsed automatically from the World Bank API.
+// gdpUsd — current US$ (NY.GDP.MKTP.CD), the headline display figure;
+// gdpConstUsd — constant 2015 US$ (NY.GDP.MKTP.KD), FX-noise-free real
+// GDP that the stability classification in GdpService is based on.
+model GdpHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  countryId   String   @map("country_id") @db.Char(2)
+  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  year        Int
+  gdpUsd      BigInt   @map("gdp_usd")
+  gdpConstUsd BigInt?  @map("gdp_const_usd")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([countryId, year])
+  @@map("gdp_history")
+}
+
+// Annual total population (World Bank SP.POP.TOTL), parsed automatically
+// alongside GDP. Powers the "population change over 10 years" indicator.
+model PopulationHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  countryId  String   @map("country_id") @db.Char(2)
+  country    Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  year       Int
+  population BigInt
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([countryId, year])
+  @@map("population_history")
 }
 
 model RiskScoreHistory {
@@ -151,10 +184,15 @@ model Article {
   aiSummaryApprovedAt    DateTime? @map("ai_summary_approved_at")
   sentimentScore         Decimal?  @map("sentiment_score") @db.Decimal(4, 3)
   contentHash            String?   @unique @map("content_hash")
+  imageUrl               String?   @map("image_url")
+  published              Boolean   @default(false)
+  authorId               String?   @map("author_id") @db.Uuid
+  author                 User?     @relation(fields: [authorId], references: [id])
   fetchedAt              DateTime  @default(now()) @map("fetched_at")
   createdAt               DateTime  @default(now()) @map("created_at")
 
   eventLinks ArticleEvent[]
+  comments   Comment[]
 
   @@map("articles")
   @@index([countryId])
@@ -182,14 +220,31 @@ model User {
   id           String    @id @default(uuid()) @db.Uuid
   email        String    @unique @db.VarChar(255)
   passwordHash String    @map("password_hash")
-  role         UserRole  @default(editor)
+  role         UserRole  @default(viewer)
+  displayName  String?   @map("display_name") @db.VarChar(50)
+  avatarUrl    String?   @map("avatar_url")
   active       Boolean   @default(true)
   lastLogin    DateTime? @map("last_login")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   refreshTokens RefreshToken[]
+  articles      Article[]
+  comments      Comment[]
 
   @@map("users")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("comments")
+  @@index([articleId, createdAt(sort: Desc)])
 }
 
 model RefreshToken {

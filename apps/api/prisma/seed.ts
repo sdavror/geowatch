@@ -564,6 +564,7 @@ async function main() {
         category: a.category,
         aiSummary: a.aiSummary,
         aiSummaryApproved: true,
+        published: true,
         sentimentScore: a.sentimentScore,
         tags: [],
       },
@@ -613,24 +614,29 @@ async function main() {
   console.log(`✅ Seeded ${historyCount} risk score history entries`);
 
   console.log('👤 Seeding admin user...');
-  // Password hash is generated at seed-time from ADMIN_SEED_PASSWORD env var
-  // (default 'ChangeMe123!' for local dev only — never reuse in production).
-  // This avoids committing a hardcoded bcrypt hash to source control.
+  // Email/password come from env (ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD)
+  // with local-dev defaults — never reuse the default password in
+  // production. Generating the hash at seed-time avoids committing one.
   const bcrypt = await import('bcrypt');
+  const seedEmail = (process.env.ADMIN_SEED_EMAIL || 'avrorikv20@gmail.com')
+    .toLowerCase()
+    .trim();
   const seedPassword = process.env.ADMIN_SEED_PASSWORD || 'ChangeMe123!';
   const passwordHash = await bcrypt.hash(seedPassword, 10);
 
   await prisma.user.upsert({
-    where: { email: 'admin@geowatch.local' },
-    update: {},
+    where: { email: seedEmail },
+    // Keep the owner account pinned to superadmin on re-seed, but never
+    // overwrite an existing password.
+    update: { role: 'superadmin' },
     create: {
-      email: 'admin@geowatch.local',
+      email: seedEmail,
       passwordHash,
       role: 'superadmin',
     },
   });
   console.log(
-    `✅ Admin user created (admin@geowatch.local / ${seedPassword}) — CHANGE THIS PASSWORD IMMEDIATELY IN PRODUCTION`,
+    `✅ Admin user created (${seedEmail} / ${seedPassword}) — CHANGE THIS PASSWORD IMMEDIATELY IN PRODUCTION`,
   );
 
   console.log('🎉 Seed complete');

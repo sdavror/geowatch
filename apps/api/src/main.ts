@@ -1,12 +1,15 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
+import { mkdirSync } from 'fs';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
   });
 
@@ -15,8 +18,15 @@ async function bootstrap() {
     'http://localhost:3000',
   ];
 
-  app.use(helmet());
+  // crossOriginResourcePolicy: cross-origin lets the web app (a different
+  // origin) embed uploaded article images served from /uploads.
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(compression());
+
+  // Uploaded article images live under ./uploads and are served at /uploads.
+  const uploadsDir = join(process.cwd(), 'uploads');
+  mkdirSync(uploadsDir, { recursive: true });
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
 
   app.enableCors({
     origin: corsOrigin,

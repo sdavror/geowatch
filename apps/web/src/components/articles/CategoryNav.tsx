@@ -7,6 +7,7 @@ const CATEGORIES: Array<{ label: string; value: EventCategory | null }> = [
   { label: 'Conflict', value: 'military' },
   { label: 'Economy', value: 'economic' },
   { label: 'Politics', value: 'political' },
+  { label: 'Humanitarian', value: 'humanitarian' },
 ];
 
 interface CategoryNavProps {
@@ -16,15 +17,15 @@ interface CategoryNavProps {
 
 export function CategoryNav({ active, onSelect }: CategoryNavProps) {
   return (
-    <nav className="flex gap-4 text-[13px]">
+    <nav className="flex gap-4 text-[14px]">
       {CATEGORIES.map((c) => (
         <button
           key={c.label}
           onClick={() => onSelect(c.value)}
           className={
             active === c.value
-              ? 'font-medium text-text-primary'
-              : 'text-text-tertiary transition-colors hover:text-text-secondary'
+              ? 'font-medium text-brand-text underline decoration-brand decoration-2 underline-offset-8'
+              : 'text-text-secondary transition-colors hover:text-brand-text'
           }
         >
           {c.label}

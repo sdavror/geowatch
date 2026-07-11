@@ -27,6 +27,8 @@ export interface Country {
   region: string | null;
   capital: string | null;
   population: number | null;
+  // Population change vs the previous year, percent (World Bank data).
+  populationYoyPct: number | null;
   gdpUsd: number | null;
   latitude: number | null;
   longitude: number | null;
@@ -56,6 +58,24 @@ export interface RiskBreakdown {
   economic: number;
   political: number;
   humanitarian: number;
+}
+
+// Annual GDP data point, parsed from the World Bank API.
+// gdpUsd — current US$; gdpConstUsd — constant 2015 US$ (real GDP).
+// Served by GET /countries/:id/gdp-history.
+export interface GdpHistoryEntry {
+  countryId: string;
+  year: number;
+  gdpUsd: number;
+  gdpConstUsd: number | null;
+}
+
+// Annual population data point (World Bank SP.POP.TOTL).
+// Served by GET /countries/:id/population-history.
+export interface PopulationHistoryEntry {
+  countryId: string;
+  year: number;
+  population: number;
 }
 
 // ─────────────────────────────────────────────
@@ -111,6 +131,8 @@ export interface Article {
   aiSummary: string | null;
   aiSummaryApproved?: boolean;
   sentimentScore: number | null;
+  imageUrl?: string | null;
+  published?: boolean;
   fetchedAt?: string;
   createdAt?: string;
 }
@@ -132,6 +154,45 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+}
+
+// The session user embedded in auth responses.
+export interface SessionUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
+// Returned by POST /auth/login and /auth/register.
+export interface AuthResponse extends AuthTokens {
+  user: SessionUser;
+}
+
+// Returned by GET /auth/me and admin user listing.
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  active: boolean;
+  lastLogin: string | null;
+  createdAt: string;
+}
+
+// A comment under an article (GET /articles/:id/comments).
+export interface Comment {
+  id: string;
+  articleId: string;
+  body: string;
+  createdAt: string;
+  author: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  };
 }
 
 export interface JwtPayload {

@@ -1,92 +1,178 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useCountries } from '@/hooks/useCountries';
 import { useArticles } from '@/hooks/useArticles';
-import { CategoryNav } from '@/components/articles/CategoryNav';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
-import { ArticleLead } from '@/components/articles/ArticleLead';
-import { ArticleCard } from '@/components/articles/ArticleCard';
+import { CategorySection } from '@/components/articles/CategorySection';
+import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
 import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
-import type { EventCategory } from '@geowatch/shared-types';
+import { Navbar } from '@/components/nav/Navbar';
+import { Hero } from '@/components/home/Hero';
+import { Newsletter } from '@/components/home/Newsletter';
+import { MarketsWidget } from '@/components/home/MarketsWidget';
+import { WeatherWidget } from '@/components/home/WeatherWidget';
+import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
+import type { Article, EventCategory } from '@geowatch/shared-types';
+
+// Section order on the World view — most urgent categories first.
+const CATEGORY_ORDER: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
 
 export default function HomePage() {
   const router = useRouter();
-  const [category, setCategory] = useState<EventCategory | null>(null);
-  const [leadArticleId, setLeadArticleId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const { countries } = useCountries();
-  const handleSelectCategory = (next: EventCategory | null) => {
-    setCategory(next);
-    setLeadArticleId(null);
-  };
+  const { articles, isLoading, isError } = useArticles();
 
-  const { articles, isLoading, isError } = useArticles({
-    category: category ?? undefined,
-  });
-
-  const leadArticle = leadArticleId
-    ? articles.find((a) => a.id === leadArticleId) ?? articles[0]
-    : articles[0];
-  const restArticles = articles.filter((a) => a.id !== leadArticle?.id);
+  const openArticle = (article: Article) => router.push(`/news/${article.id}`);
 
   const handleSelectCountry = (countryId: string) => {
-    // Jumping from a country (map dot / risk index row) to an article finds
-    // that country's most recent story, if it has one — otherwise falls
-    // back to opening the full map where the country can be explored directly.
     const match = articles.find((a) => a.countryId === countryId);
-    if (match) {
-      setLeadArticleId(match.id);
-    } else {
-      router.push('/map');
-    }
+    if (match) openArticle(match);
+    else router.push('/map');
   };
 
+  // The World front page shows every section; search narrows the whole pool
+  // by title. Drilling into a single category uses /category/[slug].
+  const view = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return articles;
+    return articles.filter((a) => a.title.toLowerCase().includes(q));
+  }, [articles, search]);
+
+  const lead = view[0];
+  const secondary = view.slice(1, 3);
+  const heroIds = new Set([lead, ...secondary].filter(Boolean).map((a) => a!.id));
+
+  const latest = useMemo(
+    () =>
+      [...articles]
+        .filter((a) => !heroIds.has(a.id))
+        .sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''))
+        .slice(0, 6),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [articles, lead, secondary.length],
+  );
+
+  const sectionArticles = (cat: EventCategory) =>
+    view.filter((a) => a.category === cat && !heroIds.has(a.id));
+
   return (
-    <main className="flex h-screen flex-col bg-bg">
-      <header className="flex h-12 flex-shrink-0 items-center gap-4 border-b border-border/10 bg-bg-2 px-5">
-        <span className="text-[15px] font-semibold tracking-wide text-text-primary">GeoWatch</span>
-        <CategoryNav active={category} onSelect={handleSelectCategory} />
-        <span className="ml-auto rounded-full border border-brand/30 bg-brand-bg px-2 py-0.5 text-[10px] text-brand-text">
-          ● LIVE
-        </span>
-        <ThemeToggle />
-      </header>
+    <div className="min-h-screen bg-bg">
+      <NewsListJsonLd articles={articles} />
+      <h1 className="sr-only">Apolitics — apolitically about politics, without bias</h1>
+
+      <Navbar active={null} search={search} onSearch={setSearch} />
 
       <BreakingTicker articles={articles} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isError && (
-            <p className="text-xs text-status-conflict">
-              Failed to load articles. Make sure the API is running and reachable at
-              NEXT_PUBLIC_API_URL.
-            </p>
-          )}
+      <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6">
+        {isError && (
+          <p className="rounded-xl bg-status-conflict/10 px-4 py-3 text-sm text-status-conflict">
+            Failed to load stories. Make sure the API is running and reachable.
+          </p>
+        )}
 
-          {isLoading && (
-            <div className="flex justify-center py-10">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-border/10 border-t-accent-blue" />
+        {isLoading && <HomeSkeleton />}
+
+        {!isLoading && !isError && view.length === 0 && (
+          <p className="py-16 text-center text-sm text-text-tertiary">
+            {search ? `No stories match “${search}”.` : 'No stories yet. Check back soon.'}
+          </p>
+        )}
+
+        {!isLoading && view.length > 0 && (
+          <div className="animate-in grid grid-cols-1 gap-x-10 gap-y-10 lg:grid-cols-[1fr_320px]">
+            {/* Main column */}
+            <div className="min-w-0">
+              {lead && <Hero lead={lead} secondary={secondary} onOpen={openArticle} />}
+
+              <div className="mt-10 border-t border-border/10 pt-8">
+                <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+                  {CATEGORY_ORDER.map((cat) => (
+                    <CategorySection
+                      key={cat}
+                      category={cat}
+                      articles={sectionArticles(cat)}
+                      onOpenArticle={openArticle}
+                      layout="grid"
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
 
-          {leadArticle && <ArticleLead article={leadArticle} />}
+            {/* Editorial sidebar */}
+            <aside className="flex flex-col gap-6 lg:sticky lg:top-[104px] lg:h-fit">
+              <RiskSidebar
+                countries={countries}
+                onSelectCountry={handleSelectCountry}
+                onOpenFullMap={() => router.push('/map')}
+              />
 
-          <div className="flex flex-col gap-1">
-            {restArticles.map((a) => (
-              <ArticleCard key={a.id} article={a} onSelect={setLeadArticleId} />
-            ))}
+              <section className="rounded-2xl border border-border/10 bg-bg-2 p-5">
+                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  Latest updates
+                </h3>
+                <ol className="flex flex-col divide-y divide-border/10">
+                  {latest.map((a, i) => (
+                    <li key={a.id}>
+                      <button
+                        onClick={() => openArticle(a)}
+                        className="group flex w-full gap-3 py-3 text-left first:pt-0 last:pb-0"
+                      >
+                        <span className="text-[15px] font-semibold tabular-nums text-brand-text">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span
+                            className="text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}
+                          >
+                            {a.category ? CATEGORY_LABEL[a.category as EventCategory] : 'News'}
+                          </span>
+                          <span className="mt-0.5 block text-[13px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
+                            {a.title}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-text-tertiary">
+                            {formatRelativeTime(a.publishedAt)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+
+              <MarketsWidget countries={countries} />
+
+              <WeatherWidget />
+
+              <Newsletter />
+            </aside>
           </div>
-        </div>
+        )}
+      </main>
+    </div>
+  );
+}
 
-        <RiskSidebar
-          countries={countries}
-          onSelectCountry={handleSelectCountry}
-          onOpenFullMap={() => router.push('/map')}
-        />
+function HomeSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px]">
+      <div>
+        <div className="skeleton aspect-[16/9] w-full rounded-2xl" />
+        <div className="skeleton mt-4 h-8 w-3/4" />
+        <div className="skeleton mt-3 h-4 w-full" />
+        <div className="skeleton mt-2 h-4 w-2/3" />
       </div>
-    </main>
+      <div className="flex flex-col gap-3">
+        <div className="skeleton h-40 w-full rounded-2xl" />
+        <div className="skeleton h-64 w-full rounded-2xl" />
+      </div>
+    </div>
   );
 }

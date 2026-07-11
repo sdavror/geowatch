@@ -1,13 +1,13 @@
-import { Body, Controller, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Param, Patch, UseGuards } from '@nestjs/common';
 import { CountriesService } from './countries.service';
 import { UpdateCountryStatusDto } from './dto/update-country-status.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
-/**
- * ⚠️ TEMPORARY: this controller is NOT yet protected by authentication.
- * Stage 3 adds JWT auth + RolesGuard. Until then, do not expose this API
- * publicly (e.g. don't deploy this build to a public production URL).
- */
 @Controller('admin/countries')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('editor') // superadmin passes via RolesGuard's owner bypass
 export class AdminCountriesController {
   constructor(private readonly countriesService: CountriesService) {}
 

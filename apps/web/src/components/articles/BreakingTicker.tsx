@@ -15,7 +15,7 @@ export function BreakingTicker({ articles }: BreakingTickerProps) {
     <div className="flex items-center overflow-hidden" style={{ backgroundColor: 'rgb(83 74 183)' }}>
       <div className="z-10 flex-shrink-0 px-4 py-2" style={{ backgroundColor: 'rgb(83 74 183)' }}>
         <span
-          className="rounded px-2 py-0.5 text-[9px] font-bold tracking-widest text-white"
+          className="rounded px-2 py-0.5 text-[10px] font-bold tracking-widest text-white"
           style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
         >
           BREAKING

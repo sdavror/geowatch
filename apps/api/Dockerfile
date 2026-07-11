@@ -44,7 +44,11 @@ COPY --from=build /app/tsconfig.base.json ./tsconfig.base.json
 
 WORKDIR /app/apps/api
 
-RUN addgroup -S geowatch && adduser -S geowatch -G geowatch \
+# Create the uploads dir at build time and own it before it becomes a
+# mount point. A named volume mounted here initializes from the image, so
+# this is what gives the non-root user write access to uploaded images.
+RUN mkdir -p /app/apps/api/uploads \
+  && addgroup -S geowatch && adduser -S geowatch -G geowatch \
   && chown -R geowatch:geowatch /app
 USER geowatch
 

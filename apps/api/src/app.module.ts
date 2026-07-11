@@ -7,6 +7,10 @@ import { RedisModule } from './common/redis.module';
 import { HealthModule } from './health/health.module';
 import { CountriesModule } from './countries/countries.module';
 import { ArticlesModule } from './articles/articles.module';
+import { GdpModule } from './gdp/gdp.module';
+import { AuthModule } from './auth/auth.module';
+import { UploadModule } from './upload/upload.module';
+import { CommentsModule } from './comments/comments.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -26,8 +30,12 @@ import { validateEnv } from './config/env.validation';
     PrismaModule,
     RedisModule,
     HealthModule,
+    AuthModule,
+    UploadModule,
+    CommentsModule,
     CountriesModule,
     ArticlesModule,
+    GdpModule,
   ],
   providers: [
     {

@@ -2,60 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Theme tokens ──────────────────────────────────────────────
-   Dark is the default (matches the original design); .light overrides
-   below flip every token for the light theme. Status colors (conflict/
-   crisis/unstable/stable) intentionally stay IDENTICAL across both
-   themes — they're semaphore signals, not brand decoration, and must
-   mean the same thing regardless of theme. */
+/* ── Design system tokens ──────────────────────────────────────────
+   Light is the default (premium editorial: white canvas, #F8FAFC panels,
+   #2563EB primary, slate neutrals). `.dark` flips to the intelligence
+   dark theme. Status colors stay identical across both — they're
+   semaphore signals (conflict/crisis/…), not brand decoration. */
 :root {
-  --color-bg: 10 12 16;          /* #0a0c10 */
-  --color-bg-2: 17 20 24;        /* #111418 */
-  --color-bg-3: 26 30 38;        /* #1a1e26 */
-  --color-bg-4: 34 39 50;        /* #222732 */
+  --color-bg: 255 255 255;       /* white canvas */
+  --color-bg-2: 248 250 252;     /* #F8FAFC secondary surface */
+  --color-bg-3: 241 245 249;     /* #F1F5F9 */
+  --color-bg-4: 226 232 240;     /* #E2E8F0 */
 
-  --color-text-primary: 232 234 240;   /* #e8eaf0 */
-  --color-text-secondary: 155 163 180; /* #9ba3b4 */
-  --color-text-tertiary: 99 107 122;   /* #636b7a */
+  --color-text-primary: 15 23 42;    /* #0F172A slate-900 */
+  --color-text-secondary: 71 85 105; /* #475569 slate-600 */
+  --color-text-tertiary: 100 116 139;/* #64748B slate-500 (AA on white) */
 
-  --color-border: 255 255 255;
+  --color-border: 15 23 42;      /* slate-900 base, used at low alpha */
 
-  --color-brand: 127 119 221;     /* lavender #7f77dd — slightly lighter, reads better on dark */
-  --color-brand-text: 196 192 246; /* lavender tint for text on dark bg */
-  --color-brand-bg: 83 74 183;     /* deeper lavender for filled backgrounds */
+  --color-brand: 37 99 235;      /* #2563EB primary */
+  --color-brand-text: 29 78 216; /* #1D4ED8 — AA blue text on white */
+  --color-brand-bg: 219 234 254; /* #DBEAFE pale blue badge fill */
 
-  /* Map-specific decoration — the radial gradient and graticule lines on
-     the WorldMap/MiniMap background. Kept separate from bg-1/2/3/4 because
-     the map's "globe in space" visual needs its own light-theme equivalent
-     rather than reusing the flat panel backgrounds. */
-  --color-map-gradient-1: 18 24 38;   /* #121826 */
-  --color-map-gradient-2: 12 16 24;   /* #0c1018 */
-  --color-map-gradient-3: 6 7 10;     /* #06070a */
-  --color-map-ocean-1: 29 34 44;      /* #1d222c */
-  --color-map-ocean-2: 22 26 34;      /* #161a22 */
-  --color-map-graticule: 28 33 41;    /* #1c2129 */
-  --color-map-land: 10 12 16;         /* #0a0c10 */
-  --color-map-land-border: 52 59 72;  /* #343b48 */
-  --color-map-land-hover: 36 42 53;   /* #242a35 */
-}
+  /* Soft, layered shadows — the premium-news depth cue. */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px rgb(15 23 42 / 0.06);
+  --shadow-pop: 0 4px 12px rgb(15 23 42 / 0.08), 0 16px 40px rgb(15 23 42 / 0.10);
 
-.light {
-  --color-bg: 255 255 255;
-  --color-bg-2: 250 250 249;
-  --color-bg-3: 241 241 239;
-  --color-bg-4: 230 230 227;
-
-  --color-text-primary: 26 26 26;
-  --color-text-secondary: 90 95 105;
-  --color-text-tertiary: 140 145 155;
-
-  --color-border: 0 0 0;
-
-  --color-brand: 83 74 183;        /* deeper lavender reads better on light bg */
-  --color-brand-text: 60 52 137;
-  --color-brand-bg: 238 237 254;   /* pale lavender tint, used for badge backgrounds */
-
-  --color-map-gradient-1: 226 232 240; /* pale blue-gray, keeps the "globe" feel in light mode */
+  --color-map-gradient-1: 226 232 240;
   --color-map-gradient-2: 241 245 249;
   --color-map-gradient-3: 250 250 249;
   --color-map-ocean-1: 219 226 234;
@@ -64,6 +36,36 @@
   --color-map-land: 241 241 239;
   --color-map-land-border: 196 203 212;
   --color-map-land-hover: 226 232 240;
+}
+
+.dark {
+  --color-bg: 10 12 16;          /* #0a0c10 */
+  --color-bg-2: 17 20 24;        /* #111418 */
+  --color-bg-3: 26 30 38;        /* #1a1e26 */
+  --color-bg-4: 34 39 50;        /* #222732 */
+
+  --color-text-primary: 232 234 240;
+  --color-text-secondary: 155 163 180;
+  --color-text-tertiary: 122 131 148;
+
+  --color-border: 255 255 255;
+
+  --color-brand: 59 130 246;      /* #3B82F6 */
+  --color-brand-text: 147 197 253;/* #93C5FD */
+  --color-brand-bg: 30 58 138;    /* #1E3A8A */
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4), 0 16px 48px rgb(0 0 0 / 0.5);
+
+  --color-map-gradient-1: 18 24 38;
+  --color-map-gradient-2: 12 16 24;
+  --color-map-gradient-3: 6 7 10;
+  --color-map-ocean-1: 29 34 44;
+  --color-map-ocean-2: 22 26 34;
+  --color-map-graticule: 28 33 41;
+  --color-map-land: 10 12 16;
+  --color-map-land-border: 52 59 72;
+  --color-map-land-hover: 36 42 53;
 }
 
 html,
@@ -76,7 +78,107 @@ body {
   box-sizing: border-box;
 }
 
+/* Accessible focus ring on every interactive element (WCAG 2.4.7). */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgb(var(--color-brand));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Reusable surface utilities. */
+.shadow-card { box-shadow: var(--shadow-card); }
+.shadow-pop { box-shadow: var(--shadow-pop); }
+
+/* Skeleton-loading shimmer. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton {
+  background: rgb(var(--color-bg-3));
+  border-radius: 8px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
 @keyframes ticker-scroll {
   0%   { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
+}
+
+/* Gentle content entrance — used on route/page mounts. */
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadein 0.3s ease both;
+}
+
+/* Respect users who prefer less motion (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Map: ocean & chrome ──────────────────────────────────────────
+   Dark theme layers an ambient texture under the ocean tint; light
+   theme keeps the plain gradient. */
+.map-ocean {
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgb(var(--color-map-ocean-1)) 0%,
+    rgb(var(--color-map-ocean-2)) 100%
+  );
+}
+html.dark .map-ocean {
+  background:
+    linear-gradient(
+      rgb(var(--color-map-ocean-1) / 0.35),
+      rgb(var(--color-map-ocean-2) / 0.5)
+    ),
+    url('/ocean-texture.jpg') center / cover no-repeat;
+}
+
+/* Frosted-glass hover popup instead of MapLibre's default white bubble. */
+.maplibregl-popup-content {
+  background: rgb(var(--color-bg-2) / 0.82) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgb(var(--color-border) / 0.12);
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-pop) !important;
+  padding: 8px 12px !important;
+}
+.maplibregl-popup-tip {
+  display: none;
+}
+
+/* Frosted-glass zoom controls. */
+.maplibregl-ctrl-group {
+  background: rgb(var(--color-bg-2) / 0.7) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgb(var(--color-border) / 0.12);
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-card) !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgb(var(--color-border) / 0.08) !important;
+}
+html.dark .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1) opacity(0.85);
 }

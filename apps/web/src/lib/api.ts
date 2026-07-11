@@ -1,4 +1,15 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+
+// Origin without the /api prefix — uploaded images are served from
+// {origin}/uploads/... (static assets aren't under the global /api prefix).
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
+
+/** Resolve an article imageUrl ("/uploads/x.jpg") to an absolute URL. */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//.test(path)) return path;
+  return `${API_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
+}
 
 export class ApiError extends Error {
   constructor(
