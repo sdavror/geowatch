@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -127,30 +128,35 @@ export function Navbar({ active, search, onSearch }: NavbarProps) {
         </div>
       </div>
 
-      {/* Category bar — desktop */}
-      <nav className="mx-auto hidden max-w-[1400px] items-center gap-1 overflow-x-auto px-4 sm:px-6 md:flex">
+      {/* Category bar — desktop. Rounded pill nav; the active pill is a
+          shared-layout Framer Motion element that glides between items. */}
+      <nav className="mx-auto hidden max-w-[1400px] items-center gap-1 overflow-x-auto px-4 py-1.5 sm:px-6 md:flex">
         {NAV_LINKS.map((c) => {
           const isActive = active === c.value;
           return (
             <Link
               key={c.label}
               href={c.href}
-              className={`relative whitespace-nowrap px-3 py-2.5 text-[13px] transition-colors ${
+              className={`relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] transition-colors ${
                 isActive
-                  ? 'font-semibold text-text-primary'
+                  ? 'font-semibold text-brand-text'
                   : 'text-text-secondary hover:text-brand-text'
               }`}
             >
-              {c.label}
               {isActive && (
-                <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-brand" />
+                <motion.span
+                  layoutId="nav-pill"
+                  className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
+                  transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                />
               )}
+              {c.label}
             </Link>
           );
         })}
         <Link
           href="/map"
-          className="ml-auto whitespace-nowrap px-3 py-2.5 text-[13px] text-brand-text hover:underline"
+          className="ml-auto whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] text-brand-text transition-colors hover:bg-bg-3"
         >
           Live map ›
         </Link>
@@ -160,13 +166,24 @@ export function Navbar({ active, search, onSearch }: NavbarProps) {
       {/* Mobile off-canvas drawer — rendered OUTSIDE the backdrop-blurred
           header, whose backdrop-filter would otherwise become the containing
           block for this fixed element and collapse it to the header height. */}
+      <AnimatePresence>
       {menuOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-[fadein_.15s_ease]"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute right-0 top-0 flex h-full w-[82%] max-w-sm flex-col bg-bg shadow-pop">
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+            className="absolute right-0 top-0 flex h-full w-[82%] max-w-sm flex-col bg-bg shadow-pop"
+          >
             <div className="flex h-14 items-center justify-between border-b border-border/10 px-4">
               <Logo />
               <button
@@ -233,9 +250,10 @@ export function Navbar({ active, search, onSearch }: NavbarProps) {
                 </Link>
               )}
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
     </>
   );
 }

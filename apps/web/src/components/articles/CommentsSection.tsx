@@ -78,7 +78,7 @@ export function CommentsSection({ articleId }: { articleId: string }) {
           <button
             type="submit"
             disabled={busy || !body.trim()}
-            className="mt-2 rounded-lg bg-brand-bg px-4 py-2 text-xs font-medium text-brand-text hover:opacity-90 disabled:opacity-50"
+            className="mt-2 rounded-full bg-brand px-5 py-2 text-xs font-medium text-white transition-all hover:opacity-90 active:scale-[0.97] disabled:opacity-50"
           >
             {busy ? 'Posting…' : 'Post comment'}
           </button>

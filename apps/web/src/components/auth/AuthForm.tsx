@@ -79,7 +79,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           <button
             type="submit"
             disabled={busy}
-            className="mt-4 w-full rounded-lg bg-brand-bg py-2 text-sm font-medium text-brand-text transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="mt-4 w-full rounded-full bg-brand py-2.5 text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
           >
             {busy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
           </button>

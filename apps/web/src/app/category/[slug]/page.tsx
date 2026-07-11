@@ -1,13 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useArticles } from '@/hooks/useArticles';
 import { Navbar } from '@/components/nav/Navbar';
-import { StoryCard } from '@/components/article/StoryCard';
+import { StoryCard, staggerContainer } from '@/components/article/StoryCard';
 import { Hero } from '@/components/home/Hero';
 import { SLUG_TO_CATEGORY, CATEGORY_INTRO, CATEGORY_NAV_LABEL } from '@/lib/categories';
 
@@ -109,11 +110,17 @@ export default function CategoryPage() {
               </div>
             )}
 
-            <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <motion.div
+              key={`${sort}-${search}`}
+              variants={staggerContainer}
+              initial="hidden"
+              animate="show"
+              className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+            >
               {(sort === 'newest' && !search ? rest : list).map((a) => (
                 <StoryCard key={a.id} article={a} onOpen={open} />
               ))}
-            </div>
+            </motion.div>
           </>
         )}
       </main>

@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import type { Article } from '@geowatch/shared-types';
 import { useArticles } from '@/hooks/useArticles';
-import { StoryCard } from './StoryCard';
+import { StoryCard, staggerContainer } from './StoryCard';
 
 const PAGE = 6;
 
@@ -48,21 +49,31 @@ export function RelatedStories({ currentId, category }: { currentId: string; cat
       {related.length > 0 && (
         <section className="mb-12">
           <h2 className="mb-5 text-[20px] font-bold tracking-tight text-text-primary">Related stories</h2>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="show"
+            className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+          >
             {related.map((a) => (
               <StoryCard key={a.id} article={a} onOpen={open} />
             ))}
-          </div>
+          </motion.div>
         </section>
       )}
 
       <section>
         <h2 className="mb-5 text-[20px] font-bold tracking-tight text-text-primary">More from Apolitics</h2>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {more.slice(0, shown).map((a) => (
             <StoryCard key={a.id} article={a} onOpen={open} />
           ))}
-        </div>
+        </motion.div>
         {shown < more.length && <div ref={sentinel} className="h-10" />}
       </section>
     </div>
