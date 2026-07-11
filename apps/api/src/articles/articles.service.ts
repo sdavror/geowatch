@@ -36,6 +36,52 @@ export class ArticlesService {
     return serialized;
   }
 
+  /** Records one view for "most read" ranking. Fire-and-forget from the client. */
+  async recordView(articleId: string, sessionId?: string) {
+    await this.prisma.pageView.create({
+      data: { entityType: 'article', entityId: articleId, sessionId },
+    });
+    return { recorded: true };
+  }
+
+  /**
+   * Most-read articles over the trailing window, ranked by raw view count.
+   * Grouped in SQL (page_views can grow large; we never pull raw rows into
+   * Node) then joined back to published articles, preserving the view-count
+   * order and dropping any view rows for since-unpublished/deleted articles.
+   */
+  async findMostRead(days = 7, limit = 6) {
+    const cacheKey = `articles:most-read:${days}:${limit}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const grouped = await this.prisma.pageView.groupBy({
+      by: ['entityId'],
+      where: { entityType: 'article', viewedAt: { gte: since } },
+      _count: { entityId: true },
+      orderBy: { _count: { entityId: 'desc' } },
+      take: limit * 2, // headroom for unpublished/deleted ids we'll filter out
+    });
+    if (grouped.length === 0) return [];
+
+    const viewCounts = new Map(grouped.map((g) => [g.entityId, g._count.entityId]));
+    const articles = await this.prisma.article.findMany({
+      where: { id: { in: grouped.map((g) => g.entityId) }, published: true },
+      include: { country: true },
+    });
+
+    const ranked = articles
+      .sort((a, b) => (viewCounts.get(b.id) ?? 0) - (viewCounts.get(a.id) ?? 0))
+      .slice(0, limit)
+      .map((a) => ({ ...this.serializeArticle(a), viewCount: viewCounts.get(a.id) ?? 0 }));
+
+    await this.redis.set(cacheKey, ranked, CACHE_TTL_LIST_SECONDS);
+    return ranked;
+  }
+
   // ── Admin CRUD ─────────────────────────────────────────────
   // Editors and the owner manage the news catalogue here. The admin list
   // shows drafts too (unlike the public feed, which is published-only).

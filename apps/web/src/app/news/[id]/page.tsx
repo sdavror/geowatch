@@ -2,14 +2,17 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { fetcher, mediaUrl } from '@/lib/api';
+import { recordArticleView } from '@/hooks/useArticles';
 import { CommentsSection } from '@/components/articles/CommentsSection';
 import { RelatedStories } from '@/components/article/RelatedStories';
 import { ShareBar } from '@/components/article/ShareBar';
 import { Logo } from '@/components/Logo';
+import { Footer } from '@/components/nav/Footer';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { readingTimeMinutes } from '@/lib/readingTime';
@@ -21,6 +24,16 @@ export default function NewsDetailPage() {
     id ? `/articles/${id}` : null,
     fetcher,
   );
+
+  // Record exactly one view per mount, once the article resolves — feeds
+  // the "Most read" ranking (GET /articles/most-read).
+  const recordedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (article && recordedFor.current !== article.id) {
+      recordedFor.current = article.id;
+      recordArticleView(article.id);
+    }
+  }, [article]);
 
   const image = mediaUrl(article?.imageUrl);
   const cat = article?.category as EventCategory | null | undefined;
@@ -135,6 +148,8 @@ export default function NewsDetailPage() {
           <RelatedStories currentId={article.id} category={article.category ?? null} />
         </div>
       )}
+
+      <Footer />
     </div>
   );
 }
