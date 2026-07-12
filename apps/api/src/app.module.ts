@@ -13,6 +13,7 @@ import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
 import { CommentsModule } from './comments/comments.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { MacroModule } from './macro/macro.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -40,6 +41,7 @@ import { validateEnv } from './config/env.validation';
     ArticlesModule,
     GdpModule,
     IngestionModule,
+    MacroModule,
   ],
   providers: [
     {

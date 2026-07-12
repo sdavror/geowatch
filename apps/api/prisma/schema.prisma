@@ -48,6 +48,7 @@ enum SourceType {
 
 model Country {
   id             String        @id @db.Char(2) // ISO 3166-1 alpha-2
+  iso3           String?       @db.Char(3) // ISO 3166-1 alpha-3 — needed to join IMF/DBnomics data, which keys on alpha-3
   name           String        @db.VarChar(100)
   flagEmoji      String?       @map("flag_emoji") @db.VarChar(8)
   region         String?       @db.VarChar(100)
@@ -62,11 +63,14 @@ model Country {
   updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at")
   createdAt      DateTime      @default(now()) @map("created_at")
 
-  events            Event[]
-  articles          Article[]
-  riskScores        RiskScoreHistory[]
-  gdpHistory        GdpHistory[]
-  populationHistory PopulationHistory[]
+  events             Event[]
+  articles           Article[]
+  riskScores         RiskScoreHistory[]
+  gdpHistory         GdpHistory[]
+  populationHistory  PopulationHistory[]
+  economicIndicators EconomicIndicator[]
+  sanctionRecords    SanctionRecord[]
+  healthScores       CountryHealthScore[]
 
   @@map("countries")
   @@index([status])
@@ -113,6 +117,68 @@ model RiskScoreHistory {
 
   @@map("risk_scores")
   @@index([countryId, computedAt(sort: Desc)])
+}
+
+// ─────────────────────────────────────────────
+// Macro Intelligence — World Bank / IMF indicators, sanctions pressure,
+// and the composite Country Health score derived from them. Deliberately
+// separate from RiskScoreHistory above (GDP-trend-based, drives the map's
+// stability color) — this is a different, macro-indicator-percentile-based
+// index, not a replacement.
+// ─────────────────────────────────────────────
+
+// Generic long-format store for World Bank / IMF WEO indicators — one row
+// per (country, indicator, year). A single flexible table instead of one
+// column/table per indicator, since new indicators get added over time.
+model EconomicIndicator {
+  id            String   @id @default(uuid()) @db.Uuid
+  countryId     String   @map("country_id") @db.Char(2)
+  country       Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  indicatorCode String   @map("indicator_code") @db.VarChar(64) // e.g. "WB:NY.GNP.PCAP.PP.CD", "IMF:NGDP_RPCH"
+  source        String   @db.VarChar(32) // 'worldbank' | 'imf_weo'
+  period        DateTime @db.Date // year stored as Jan 1 of that year
+  value         Decimal  @db.Decimal(18, 4)
+  isForecast    Boolean  @default(false) @map("is_forecast") // IMF WEO includes forecasts up to +5 years
+  loadedAt      DateTime @default(now()) @updatedAt @map("loaded_at")
+
+  @@unique([countryId, indicatorCode, period])
+  @@map("economic_indicators")
+  @@index([indicatorCode, period])
+}
+
+// Country-level aggregate sanctioned-entity counts (not individual entities
+// — see OpenSanctionsAdapter for the licensing note on why this stays
+// aggregate-only for now).
+model SanctionRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  countryId   String   @map("country_id") @db.Char(2)
+  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  program     String   @db.VarChar(64) // e.g. "opensanctions:all"
+  entityCount Int      @map("entity_count")
+  asOf        DateTime @db.Date
+  loadedAt    DateTime @default(now()) @updatedAt @map("loaded_at")
+
+  @@unique([countryId, program, asOf])
+  @@map("sanction_records")
+}
+
+// Composite "Country Health" index — percentile-normalized weighted sum of
+// EconomicIndicator + SanctionRecord values. Versioned (methodology) so a
+// future v2 can run alongside v1 for comparison rather than overwriting it.
+model CountryHealthScore {
+  id          String   @id @default(uuid()) @db.Uuid
+  countryId   String   @map("country_id") @db.Char(2)
+  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  scoreName   String   @map("score_name") @db.VarChar(64) // 'country_health'
+  methodology String   @db.VarChar(16) // 'v1'
+  period      DateTime @db.Date
+  value       Decimal  @db.Decimal(6, 2)
+  components  Json?
+  computedAt  DateTime @default(now()) @map("computed_at")
+
+  @@unique([countryId, scoreName, methodology, period])
+  @@map("country_health_scores")
+  @@index([scoreName, period])
 }
 
 // ─────────────────────────────────────────────
