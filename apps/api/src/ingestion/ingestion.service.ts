@@ -20,6 +20,13 @@ const DEFAULT_SOURCES: Array<{ name: string; url: string }> = [
   { name: 'UN News', url: 'https://news.un.org/feed/subscribe/en/news/all/rss.xml' },
 ];
 
+// Wire stories are time-sensitive — a pending draft an editor hasn't acted
+// on after two weeks is very unlikely to still be worth publishing, and an
+// unbounded pending queue defeats the point of a FIFO moderation queue.
+// Published articles are never auto-deleted (a news archive is expected to
+// persist), only stale *unreviewed* drafts.
+const STALE_DRAFT_RETENTION_DAYS = 14;
+
 export interface IngestionSummary {
   sourcesChecked: number;
   itemsFetched: number;
@@ -54,6 +61,26 @@ export class IngestionService implements OnModuleInit {
   @Cron('0 */15 * * * *')
   async scheduledRun() {
     await this.runIngestion();
+  }
+
+  /** Runs once daily at 03:00 — off-peak, and retention doesn't need finer granularity. */
+  @Cron('0 0 3 * * *')
+  async scheduledPurge() {
+    await this.purgeStaleDrafts();
+  }
+
+  async purgeStaleDrafts(): Promise<{ purged: number }> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - STALE_DRAFT_RETENTION_DAYS);
+    const { count } = await this.prisma.article.deleteMany({
+      where: { published: false, createdAt: { lt: cutoff } },
+    });
+    if (count > 0) {
+      this.logger.log(
+        `🗑️ Purged ${count} stale pending draft(s) older than ${STALE_DRAFT_RETENTION_DAYS} days`,
+      );
+    }
+    return { purged: count };
   }
 
   private async seedDefaultSources() {

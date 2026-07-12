@@ -58,4 +58,10 @@ export class SourcesController {
   ingest() {
     return this.ingestion.runIngestion();
   }
+
+  /** Manually trigger the stale-draft purge (normally runs daily at 03:00). */
+  @Post('purge-stale')
+  purgeStale() {
+    return this.ingestion.purgeStaleDrafts();
+  }
 }
