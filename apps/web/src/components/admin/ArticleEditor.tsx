@@ -27,7 +27,32 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [eventText, setEventText] = useState('');
+  const [analyzingEvent, setAnalyzingEvent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleAnalyzeEvent = async () => {
+    if (eventText.trim().length < 12) {
+      setError('Describe the event in a sentence or two (name at least one country)');
+      return;
+    }
+    setAnalyzingEvent(true);
+    setError(null);
+    try {
+      // Local LLM inference (Qwen2.5 on Ollama) — can take up to ~2 minutes.
+      const report = await authFetch<{ title: string; summary: string; body: string }>(
+        '/admin/analysis/event',
+        { method: 'POST', body: JSON.stringify({ text: eventText.trim() }) },
+      );
+      setTitle(report.title);
+      setSummary(report.summary);
+      setBody(report.body);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Event analysis failed');
+    } finally {
+      setAnalyzingEvent(false);
+    }
+  };
 
   const handleGenerate = async () => {
     const id = countryId.trim().toUpperCase();
@@ -153,13 +178,35 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
           <button
             type="button"
             onClick={handleGenerate}
-            disabled={generating || busy || uploading}
+            disabled={generating || analyzingEvent || busy || uploading}
             title="Generate a draft from the country's macro-intelligence data (local LLM)"
             className="whitespace-nowrap rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
           >
             {generating ? 'Generating…' : '✨ Generate analysis'}
           </button>
         </div>
+      </div>
+
+      <label className="mb-1 block text-[12px] text-text-secondary">
+        Event impact (describe a reported event; the analysis is grounded in the involved countries&apos; data)
+      </label>
+      <div className="mb-3 flex items-start gap-3">
+        <textarea
+          value={eventText}
+          onChange={(e) => setEventText(e.target.value)}
+          rows={2}
+          placeholder="e.g. Ukraine destroyed a tanker in the Black Sea"
+          className="flex-1 resize-y rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={handleAnalyzeEvent}
+          disabled={analyzingEvent || generating || busy || uploading}
+          title="Structured impact assessment: who is affected, short/medium-term regional macro consequences (local LLM)"
+          className="whitespace-nowrap rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
+        >
+          {analyzingEvent ? 'Analyzing…' : '⚡ Analyze event'}
+        </button>
       </div>
 
       <label className="mb-1 block text-[12px] text-text-secondary">Summary</label>
