@@ -24,16 +24,57 @@ export class ArticlesService {
     if (query.category) where.category = query.category;
     if (query.countryId) where.countryId = query.countryId.toUpperCase();
 
-    const articles = await this.prisma.article.findMany({
+    // Over-fetch a larger recency-ordered pool, then cap how many of the
+    // final `limit` slots any single source can take — otherwise one
+    // outlet's posting burst crowds out every other source on the homepage
+    // (observed in practice: one RSS feed took 12 of the top 20 slots).
+    const pool = await this.prisma.article.findMany({
       where,
       orderBy: { publishedAt: 'desc' },
-      take: limit,
+      take: Math.min(limit * 4, 100),
       include: { country: true },
     });
 
-    const serialized = articles.map((a) => this.serializeArticle(a));
+    const diversified = this.applySourceDiversity(pool, limit);
+    const serialized = diversified.map((a) => this.serializeArticle(a));
     await this.redis.set(cacheKey, serialized, CACHE_TTL_LIST_SECONDS);
     return serialized;
+  }
+
+  /**
+   * Keeps at most 40% of the returned slots from any one source, backfilling
+   * from the overflow (in original recency order) if too few sources are
+   * active to fill `limit` otherwise. Re-sorts by recency at the end, so
+   * diversity changes *which* articles are included, not the display order.
+   */
+  private applySourceDiversity<T extends { sourceId: string | null; publishedAt: Date | null }>(
+    pool: T[],
+    limit: number,
+  ): T[] {
+    const maxPerSource = Math.max(2, Math.ceil(limit * 0.4));
+    const counts = new Map<string, number>();
+    const picked: T[] = [];
+    const deferred: T[] = [];
+
+    for (const article of pool) {
+      if (picked.length >= limit) break;
+      const key = article.sourceId ?? 'none';
+      const count = counts.get(key) ?? 0;
+      if (count < maxPerSource) {
+        picked.push(article);
+        counts.set(key, count + 1);
+      } else {
+        deferred.push(article);
+      }
+    }
+    for (const article of deferred) {
+      if (picked.length >= limit) break;
+      picked.push(article);
+    }
+
+    return picked.sort(
+      (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0),
+    );
   }
 
   /** Records one view for "most read" ranking. Fire-and-forget from the client. */
