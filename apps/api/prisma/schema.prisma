@@ -71,6 +71,7 @@ model Country {
   economicIndicators EconomicIndicator[]
   sanctionRecords    SanctionRecord[]
   healthScores       CountryHealthScore[]
+  sources            Source[]
 
   @@map("countries")
   @@index([status])
@@ -220,6 +221,15 @@ model Source {
   url                  String
   apiKey               String?    @map("api_key")
   active               Boolean    @default(true)
+  // Official government/institution outlet (press service, ministry, head of
+  // state) as opposed to independent media — lets the analysis layer cite
+  // "official statements" as a distinct evidence class.
+  official             Boolean    @default(false)
+  // For official sources: the state this outlet speaks for. Used as a
+  // country-classification fallback — a head-of-state feed rarely names its
+  // own country in headlines.
+  countryId            String?    @map("country_id") @db.Char(2)
+  country              Country?   @relation(fields: [countryId], references: [id])
   fetchIntervalMinutes Int        @default(15) @map("fetch_interval_minutes")
   lastFetched          DateTime?  @map("last_fetched")
   articleCount         Int        @default(0) @map("article_count")

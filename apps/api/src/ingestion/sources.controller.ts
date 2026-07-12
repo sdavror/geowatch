@@ -34,7 +34,14 @@ export class SourcesController {
   @Post()
   create(@Body() dto: CreateSourceDto) {
     return this.prisma.source.create({
-      data: { name: dto.name, url: dto.url, type: dto.type as never, fetchIntervalMinutes: dto.fetchIntervalMinutes },
+      data: {
+        name: dto.name,
+        url: dto.url,
+        type: dto.type as never,
+        fetchIntervalMinutes: dto.fetchIntervalMinutes,
+        official: dto.official ?? false,
+        countryId: dto.countryId?.toUpperCase() ?? null,
+      },
     });
   }
 

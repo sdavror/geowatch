@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUrl, Min, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUrl, Length, Min, MaxLength } from 'class-validator';
 
 const SOURCE_TYPES = ['wire', 'rss', 'api', 'scraper'];
 
@@ -18,6 +18,16 @@ export class CreateSourceDto {
   @IsInt()
   @Min(5)
   fetchIntervalMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  official?: boolean;
+
+  /** ISO 3166-1 alpha-2 of the state an official source speaks for. */
+  @IsOptional()
+  @IsString()
+  @Length(2, 2)
+  countryId?: string;
 }
 
 export class UpdateSourceDto {
@@ -42,4 +52,13 @@ export class UpdateSourceDto {
   @IsInt()
   @Min(5)
   fetchIntervalMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  official?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 2)
+  countryId?: string;
 }
