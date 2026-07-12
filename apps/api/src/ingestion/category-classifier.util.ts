@@ -11,21 +11,29 @@ const KEYWORDS: Record<EventCategory, string[]> = {
     'war', 'conflict', 'strike', 'attack', 'military', 'troops', 'invasion',
     'ceasefire', 'missile', 'drone', 'combat', 'insurgent', 'rebel',
     'offensive', 'airstrike', 'bombing', 'clashes', 'front line', 'soldiers',
+    'kidnapped', 'kidnapping', 'hostage', 'hostages', 'gunmen', 'militant',
+    'militants', 'army', 'navy', 'shelling', 'siege',
   ],
   economic: [
     'gdp', 'inflation', 'market', 'economy', 'trade', 'tariff', 'recession',
     'imf', 'central bank', 'interest rate', 'currency', 'stock', 'debt',
     'unemployment', 'budget', 'deficit', 'exports', 'imports',
+    'wages', 'jobs report', 'bankruptcy', 'shares', 'earnings', 'oil prices',
+    'crypto', 'stock market', 'wall street', 'layoffs',
   ],
   political: [
     'election', 'president', 'parliament', 'government', 'minister',
     'diplomat', 'sanctions', 'summit', 'treaty', 'coalition', 'referendum',
     'opposition', 'coup', 'resignation', 'vote', 'lawmakers',
+    'court', 'judge', 'ruling', 'trial', 'lawsuit', 'indictment',
+    'impeachment', 'legislation', 'senate', 'congress', 'lawmaker',
   ],
   humanitarian: [
     'refugee', 'displaced', 'aid', 'famine', 'disaster', 'earthquake',
     'flood', 'humanitarian', 'hunger', 'epidemic', 'casualties', 'evacuate',
     'evacuation', 'relief effort', 'shortage',
+    'wildfire', 'wildfires', 'typhoon', 'hurricane', 'cyclone', 'landslide',
+    'death toll', 'killed', 'outbreak', 'pandemic',
   ],
 };
 
