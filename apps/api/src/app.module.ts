@@ -14,6 +14,7 @@ import { UploadModule } from './upload/upload.module';
 import { CommentsModule } from './comments/comments.module';
 import { IngestionModule } from './ingestion/ingestion.module';
 import { MacroModule } from './macro/macro.module';
+import { AnalysisModule } from './analysis/analysis.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -42,6 +43,7 @@ import { validateEnv } from './config/env.validation';
     GdpModule,
     IngestionModule,
     MacroModule,
+    AnalysisModule,
   ],
   providers: [
     {
