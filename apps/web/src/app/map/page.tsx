@@ -6,6 +6,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
 import dynamic from 'next/dynamic';
 import { useCountries, useCountry } from '@/hooks/useCountries';
+import { useMacroScores } from '@/hooks/useMacroScores';
 import { useMapStore } from '@/store/useMapStore';
 import { MapLegend } from '@/components/map/MapLegend';
 import { RegionFilterPanel } from '@/components/sidebar/RegionFilterPanel';
@@ -44,6 +45,7 @@ export default function MapPage() {
     region: regionFilter ?? undefined,
   });
   const { country: selectedCountry } = useCountry(selectedCountryId);
+  const { scores: macroScores } = useMacroScores();
   const [search, setSearch] = useState('');
 
   const visibleCountries = search
@@ -102,6 +104,7 @@ export default function MapPage() {
             countries={visibleCountries}
             selectedCountryId={selectedCountryId}
             onSelectCountry={selectCountry}
+            macroScores={macroScores}
           />
 
           <MapLegend />

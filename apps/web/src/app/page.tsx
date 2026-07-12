@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useCountries } from '@/hooks/useCountries';
 import { useArticles, useMostRead } from '@/hooks/useArticles';
+import { useMacroScores } from '@/hooks/useMacroScores';
 import { BreakingTicker } from '@/components/articles/BreakingTicker';
 import { CategorySection } from '@/components/articles/CategorySection';
 import { NewsListJsonLd } from '@/components/articles/NewsListJsonLd';
@@ -13,6 +14,7 @@ import { Footer } from '@/components/nav/Footer';
 import { Hero } from '@/components/home/Hero';
 import { Newsletter } from '@/components/home/Newsletter';
 import { MarketsWidget } from '@/components/home/MarketsWidget';
+import { CountryHealthWidget } from '@/components/home/CountryHealthWidget';
 import { WeatherWidget } from '@/components/home/WeatherWidget';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
@@ -28,6 +30,7 @@ export default function HomePage() {
   const { countries } = useCountries();
   const { articles, isLoading, isError } = useArticles();
   const { articles: mostRead } = useMostRead();
+  const { scores: macroScores } = useMacroScores();
 
   const openArticle = (article: Article) => router.push(`/news/${article.id}`);
 
@@ -122,6 +125,8 @@ export default function HomePage() {
               )}
 
               <RankedList title="Latest updates" articles={latest} onOpen={openArticle} />
+
+              <CountryHealthWidget scores={macroScores} />
 
               <MarketsWidget countries={countries} />
 

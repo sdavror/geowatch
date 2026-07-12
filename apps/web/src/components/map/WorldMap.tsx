@@ -5,7 +5,7 @@ import maplibregl from 'maplibre-gl';
 import type { MapLayerMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { feature } from 'topojson-client';
-import type { Country } from '@geowatch/shared-types';
+import type { Country, MacroScoreEntry } from '@geowatch/shared-types';
 import { STATUS_COLOR } from '@geowatch/shared-types';
 import { NUMERIC_TO_ALPHA2 } from '@/lib/isoNumericMap';
 
@@ -13,6 +13,7 @@ interface WorldMapProps {
   countries: Country[];
   selectedCountryId: string | null;
   onSelectCountry: (id: string) => void;
+  macroScores?: MacroScoreEntry[];
 }
 
 // We render our OWN country layer from the visionscarto world-atlas data
@@ -102,6 +103,17 @@ function populationPopupHtml(country: Country): string {
   );
 }
 
+// Same green/amber/red convention as the population arrow above — kept
+// consistent rather than inventing a new color scale for this second score.
+function macroScorePopupHtml(score: MacroScoreEntry | undefined): string {
+  if (!score) return '';
+  const color = score.value >= 60 ? '#3ecf8e' : score.value >= 40 ? '#e8b84a' : '#e84545';
+  return (
+    `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">` +
+    `Country health <span style="color:${color};font-weight:600;">${score.value.toFixed(0)}</span></div>`
+  );
+}
+
 // Minimal MapLibre style: a transparent background and an empty GeoJSON
 // source we populate once the world data loads. The background is left
 // transparent on purpose — the "globe in space" radial gradient (ocean)
@@ -167,7 +179,7 @@ function conflictNumerics(countries: Country[]): string[] {
     .filter((n): n is string => Boolean(n));
 }
 
-export function WorldMap({ countries, selectedCountryId, onSelectCountry }: WorldMapProps) {
+export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroScores }: WorldMapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<InstanceType<typeof maplibregl.Map> | null>(null);
   const loadedRef = useRef(false);
@@ -177,8 +189,10 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
   const hoveredIsoRef = useRef<string | null>(null);
   const countriesRef = useRef(countries);
   const onSelectRef = useRef(onSelectCountry);
+  const macroScoresRef = useRef(macroScores);
   countriesRef.current = countries;
   onSelectRef.current = onSelectCountry;
+  macroScoresRef.current = macroScores;
 
   // --- Init map once. ------------------------------------------------------
   useEffect(() => {
@@ -368,10 +382,12 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry }: Worl
           return;
         }
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
+        const score = macroScoresRef.current?.find((s) => s.countryId === country.id);
         const html =
           `<div style="font:600 13px var(--font-inter),system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
           `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
-          populationPopupHtml(country);
+          populationPopupHtml(country) +
+          macroScorePopupHtml(score);
         if (!popupRef.current) {
           popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         }
