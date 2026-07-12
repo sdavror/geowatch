@@ -27,7 +27,7 @@ export class AnalysisService {
     const country = await this.prisma.country.findUnique({ where: { id } });
     if (!country) throw new NotFoundException(`Country "${id}" not found`);
 
-    const [healthScore, indicators, sanctions, recentArticles, riskHistory] = await Promise.all([
+    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements] = await Promise.all([
       this.prisma.countryHealthScore.findFirst({
         where: { countryId: id, scoreName: 'country_health' },
         orderBy: { period: 'desc' },
@@ -51,9 +51,26 @@ export class AnalysisService {
         where: { countryId: id },
         orderBy: { computedAt: 'desc' },
       }),
+      // Official government statements are source data, not our editorial
+      // output — include them regardless of moderation status (ingested
+      // statements sit unpublished in the queue but are still real context).
+      this.prisma.article.findMany({
+        where: { countryId: id, source: { official: true } },
+        orderBy: { publishedAt: 'desc' },
+        take: 5,
+        select: { title: true, publishedAt: true, source: { select: { name: true } } },
+      }),
     ]);
 
-    const prompt = this.buildPrompt({ country, healthScore, indicators, sanctions, recentArticles, riskHistory });
+    const prompt = this.buildPrompt({
+      country,
+      healthScore,
+      indicators,
+      sanctions,
+      recentArticles,
+      riskHistory,
+      officialStatements,
+    });
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
     return this.repairDraft(raw);
   }
@@ -65,6 +82,7 @@ export class AnalysisService {
     sanctions: { entityCount: number } | null;
     recentArticles: Array<{ title: string; category: string | null; publishedAt: Date | null }>;
     riskHistory: { score: unknown } | null;
+    officialStatements: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
   }): string {
     const lines: string[] = [];
     lines.push(
@@ -101,6 +119,16 @@ export class AnalysisService {
       lines.push('- Recent published headlines about this country:');
       for (const a of data.recentArticles) {
         lines.push(`  - ${a.title}${a.category ? ` [${a.category}]` : ''}`);
+      }
+    }
+    if (data.officialStatements.length > 0) {
+      lines.push(
+        '- Recent official government statements concerning this country ' +
+          '(primary-source press releases; attribute clearly, treat as the position of the issuing government, not established fact):',
+      );
+      for (const s of data.officialStatements) {
+        const attribution = s.source?.name ?? 'Official source';
+        lines.push(`  - [${attribution}] ${s.title}`);
       }
     }
 

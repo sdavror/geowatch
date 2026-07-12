@@ -20,6 +20,16 @@ interface MediaField {
   $?: { url?: string };
 }
 
+// Several official government feeds (e.g. state.gov) serve an HTML error
+// page to non-browser user agents, so requests must look like a browser.
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+// Government feeds are frequently hand-assembled and ship bare "&" characters
+// in URLs/titles, which is invalid XML and kills a strict parser. Escape any
+// ampersand that isn't already the start of a valid entity.
+const BARE_AMP_RE = /&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/g;
+
 @Injectable()
 export class RssAdapter {
   private readonly logger = new Logger(RssAdapter.name);
@@ -29,7 +39,23 @@ export class RssAdapter {
   });
 
   async fetch(feedUrl: string): Promise<FetchedItem[]> {
-    const feed = await this.parser.parseURL(feedUrl);
+    const res = await fetch(feedUrl, {
+      headers: {
+        'User-Agent': BROWSER_UA,
+        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${feedUrl}`);
+    const raw = await res.text();
+    if (!/<(rss|feed|rdf)/i.test(raw.slice(0, 1000))) {
+      // Anti-bot interstitials (captcha pages, "technical difficulties"
+      // shells) come back as HTML with a 200 — fail loudly instead of
+      // handing HTML to the XML parser.
+      throw new Error(`Response from ${feedUrl} is not an RSS/Atom document`);
+    }
+    const feed = await this.parser.parseString(raw.replace(BARE_AMP_RE, '&amp;'));
     const items: FetchedItem[] = [];
 
     for (const item of feed.items ?? []) {

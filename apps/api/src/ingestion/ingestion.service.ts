@@ -10,14 +10,52 @@ import { matchCountry } from './country-matcher.util';
 
 // Diverse-by-design set of free, no-key RSS feeds spanning different
 // regions/outlets — matches the "apolitically about politics" positioning
-// better than leaning on a single wire service. Seeded once, editable
+// better than leaning on a single wire service. Seeded by URL (each row is
+// created if missing, so new defaults reach existing databases), editable
 // afterward via the admin Sources endpoints.
-const DEFAULT_SOURCES: Array<{ name: string; url: string }> = [
+//
+// `official: true` marks government/institution press services rather than
+// independent media; `countryId` is the state the outlet speaks for, used as
+// a country-classification fallback (a head-of-state feed rarely names its
+// own country in headlines). The official set deliberately spans opposing
+// sides of current conflicts — publishing every government's own words,
+// clearly labeled, is the "without bias" positioning.
+const DEFAULT_SOURCES: Array<{ name: string; url: string; official?: boolean; countryId?: string }> = [
   { name: 'BBC World News', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
   { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { name: 'NPR World', url: 'https://feeds.npr.org/1004/rss.xml' },
   { name: 'DW World News', url: 'https://rss.dw.com/rdf/rss-en-world' },
   { name: 'UN News', url: 'https://news.un.org/feed/subscribe/en/news/all/rss.xml' },
+  {
+    name: 'US State Department',
+    url: 'https://www.state.gov/rss-feed/press-releases/feed/',
+    official: true,
+    countryId: 'US',
+  },
+  {
+    name: 'UK Government',
+    url: 'https://www.gov.uk/search/news-and-communications.atom',
+    official: true,
+    countryId: 'GB',
+  },
+  {
+    name: 'European Commission',
+    url: 'https://ec.europa.eu/commission/presscorner/api/rss?language=en',
+    official: true,
+    // Supranational — no single ISO country to attribute statements to.
+  },
+  {
+    name: 'President of Ukraine',
+    url: 'https://www.president.gov.ua/en/rss',
+    official: true,
+    countryId: 'UA',
+  },
+  {
+    name: 'Kremlin',
+    url: 'http://en.kremlin.ru/events/all/feed',
+    official: true,
+    countryId: 'RU',
+  },
 ];
 
 // Wire stories are time-sensitive — a pending draft an editor hasn't acted
@@ -84,16 +122,26 @@ export class IngestionService implements OnModuleInit {
   }
 
   private async seedDefaultSources() {
-    // Scoped to type 'rss' specifically — a pre-existing placeholder "api"
-    // source (from the original mock-article seed) shouldn't block this.
-    const count = await this.prisma.source.count({ where: { type: 'rss' } });
-    if (count > 0) return;
+    // Per-URL, not a global "any rss rows exist" check — an existing database
+    // must still receive defaults added in later releases (e.g. the official
+    // government feeds). Rows the admin already edited are left untouched.
+    let created = 0;
     for (const s of DEFAULT_SOURCES) {
+      const existing = await this.prisma.source.findFirst({ where: { url: s.url }, select: { id: true } });
+      if (existing) continue;
       await this.prisma.source.create({
-        data: { name: s.name, type: 'rss', url: s.url, fetchIntervalMinutes: 15 },
+        data: {
+          name: s.name,
+          type: 'rss',
+          url: s.url,
+          fetchIntervalMinutes: 15,
+          official: s.official ?? false,
+          countryId: s.countryId ?? null,
+        },
       });
+      created++;
     }
-    this.logger.log(`Seeded ${DEFAULT_SOURCES.length} default RSS sources`);
+    if (created > 0) this.logger.log(`Seeded ${created} default RSS source(s)`);
   }
 
   async runIngestion(): Promise<IngestionSummary> {
@@ -131,7 +179,7 @@ export class IngestionService implements OnModuleInit {
         summary.itemsFetched += items.length;
 
         for (const item of items) {
-          const created = await this.ingestOne(item, source.id, countries);
+          const created = await this.ingestOne(item, source.id, countries, source.countryId);
           if (created) summary.articlesCreated++;
           else summary.duplicatesSkipped++;
         }
@@ -177,6 +225,7 @@ export class IngestionService implements OnModuleInit {
     item: FetchedItem,
     sourceId: string | null,
     countries: { id: string; name: string }[],
+    sourceCountryId: string | null = null,
   ): Promise<boolean> {
     const hash = contentHash(item.title, item.url);
 
@@ -187,7 +236,10 @@ export class IngestionService implements OnModuleInit {
     if (existing) return false;
 
     const category = classifyCategory(item.title, item.body);
-    const countryId = matchCountry(item.title, countries);
+    // Title matching first; if the headline names no country, fall back to
+    // the source's own state (official feeds speak about "our" policy
+    // without naming themselves).
+    const countryId = matchCountry(item.title, countries) ?? sourceCountryId;
 
     try {
       await this.prisma.article.create({
