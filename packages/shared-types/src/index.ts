@@ -60,6 +60,21 @@ export interface RiskBreakdown {
   humanitarian: number;
 }
 
+// "Country Health" composite index — percentile-normalized World Bank/IMF
+// macro indicators + sanctions pressure. Served by GET /macro/scores and
+// GET /macro/scores/:countryId. Distinct from RiskScoreEntry above (that
+// one drives the map's stability color from a GDP trend); this is a
+// separate, macro-indicator-based index.
+export interface MacroScoreEntry {
+  countryId: string;
+  countryName: string;
+  region: string | null;
+  flagEmoji: string | null;
+  value: number;
+  period: string;
+  components: Record<string, number> | null;
+}
+
 // Annual GDP data point, parsed from the World Bank API.
 // gdpUsd — current US$; gdpConstUsd — constant 2015 US$ (real GDP).
 // Served by GET /countries/:id/gdp-history.
