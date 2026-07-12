@@ -18,13 +18,23 @@ export default function AdminPage() {
   const { user, loading, canEdit, isOwner, logout } = useAuth();
 
   const [articles, setArticles] = useState<Article[]>([]);
+  const [counts, setCounts] = useState({ pending: 0, published: 0, total: 0 });
   const [listError, setListError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Article | null | 'new'>(null);
   const [tab, setTab] = useState<'news' | 'users' | 'account'>('news');
+  // Moderation queue defaults to "Pending" — ingestion drops new stories in
+  // unreviewed, so that's what an editor opening this page needs to see first.
+  const [newsFilter, setNewsFilter] = useState<'pending' | 'published' | 'all'>('pending');
 
-  const loadArticles = useCallback(async () => {
+  const loadArticles = useCallback(async (filter: 'pending' | 'published' | 'all') => {
     try {
-      setArticles(await authFetch<Article[]>('/admin/articles'));
+      const qs = filter === 'all' ? '' : `?published=${filter === 'published'}`;
+      const [list, c] = await Promise.all([
+        authFetch<Article[]>(`/admin/articles${qs}`),
+        authFetch<{ pending: number; published: number; total: number }>('/admin/articles/counts'),
+      ]);
+      setArticles(list);
+      setCounts(c);
       setListError(null);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Failed to load');
@@ -37,14 +47,14 @@ export default function AdminPage() {
       router.replace('/login');
       return;
     }
-    if (canEdit) void loadArticles();
-  }, [loading, user, canEdit, loadArticles, router]);
+    if (canEdit) void loadArticles(newsFilter);
+  }, [loading, user, canEdit, loadArticles, newsFilter, router]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this story permanently?')) return;
     try {
       await authFetch(`/admin/articles/${id}`, { method: 'DELETE' });
-      await loadArticles();
+      await loadArticles(newsFilter);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Delete failed');
     }
@@ -56,7 +66,7 @@ export default function AdminPage() {
         method: 'PATCH',
         body: JSON.stringify({ published: !a.published }),
       });
-      await loadArticles();
+      await loadArticles(newsFilter);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Update failed');
     }
@@ -161,7 +171,7 @@ export default function AdminPage() {
                 article={editing === 'new' ? null : editing}
                 onSaved={() => {
                   setEditing(null);
-                  void loadArticles();
+                  void loadArticles(newsFilter);
                 }}
                 onCancel={() => setEditing(null)}
               />
@@ -170,6 +180,21 @@ export default function AdminPage() {
 
           {tab === 'news' && !editing && (
             <>
+              <div className="mb-4 flex items-center gap-1.5">
+                {(['pending', 'published', 'all'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setNewsFilter(f)}
+                    className={`rounded-full px-3 py-1 text-[12px] capitalize ${
+                      newsFilter === f
+                        ? 'bg-brand-bg text-brand-text'
+                        : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
+                    }`}
+                  >
+                    {f} {f === 'pending' ? counts.pending : f === 'published' ? counts.published : counts.total}
+                  </button>
+                ))}
+              </div>
               {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
               <div className="flex flex-col gap-1">
                 {articles.map((a) => (
@@ -220,7 +245,11 @@ export default function AdminPage() {
                 ))}
                 {articles.length === 0 && !listError && (
                   <p className="py-8 text-center text-xs text-text-tertiary">
-                    No stories yet. Create your first one.
+                    {newsFilter === 'pending'
+                      ? 'No pending stories — the queue is clear.'
+                      : newsFilter === 'published'
+                        ? 'Nothing published yet.'
+                        : 'No stories yet. Create your first one.'}
                   </p>
                 )}
               </div>

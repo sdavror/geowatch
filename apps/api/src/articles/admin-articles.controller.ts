@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -28,8 +29,14 @@ export class AdminArticlesController {
   constructor(private readonly articlesService: ArticlesService) {}
 
   @Get()
-  list() {
-    return this.articlesService.findAllAdmin();
+  list(@Query('published') published?: string) {
+    const filter = published === undefined ? undefined : published === 'true';
+    return this.articlesService.findAllAdmin(filter);
+  }
+
+  @Get('counts')
+  counts() {
+    return this.articlesService.countAdmin();
   }
 
   @Post()
