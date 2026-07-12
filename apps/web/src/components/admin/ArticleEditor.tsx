@@ -26,7 +26,33 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
   const [published, setPublished] = useState(article?.published ?? false);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    const id = countryId.trim().toUpperCase();
+    if (!id) {
+      setError('Enter a country (ISO2) first');
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    try {
+      // Local LLM inference (Qwen2.5 on Ollama) — can take up to ~2 minutes.
+      const draft = await authFetch<{ title: string; summary: string; body: string }>(
+        `/admin/analysis/draft/${id}`,
+        { method: 'POST' },
+      );
+      setTitle(draft.title);
+      setSummary(draft.summary);
+      setBody(draft.body);
+      setCountryId(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -122,6 +148,17 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
             maxLength={2}
             className="w-full rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm uppercase text-text-primary focus:border-accent-blue focus:outline-none"
           />
+        </div>
+        <div className="flex flex-col justify-end">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating || busy || uploading}
+            title="Generate a draft from the country's macro-intelligence data (local LLM)"
+            className="whitespace-nowrap rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
+          >
+            {generating ? 'Generating…' : '✨ Generate analysis'}
+          </button>
         </div>
       </div>
 
