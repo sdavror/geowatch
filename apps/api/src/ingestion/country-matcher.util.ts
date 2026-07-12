@@ -94,6 +94,27 @@ export function matchCountry(
   title: string,
   countries: { id: string; name: string }[],
 ): string | null {
+  const matches = collectCountryMatches(title, countries);
+  // Exactly one clear match; ambiguous (0 or 2+) stays unassigned.
+  return matches.size === 1 ? [...matches][0] : null;
+}
+
+/**
+ * All countries a text names — for event-impact analysis, where an incident
+ * naming several states ("Ukraine destroyed a Russian tanker") should pull
+ * ALL of them into the report, unlike single-country article attribution.
+ */
+export function matchCountries(
+  text: string,
+  countries: { id: string; name: string }[],
+): string[] {
+  return [...collectCountryMatches(text, countries)];
+}
+
+function collectCountryMatches(
+  text: string,
+  countries: { id: string; name: string }[],
+): Set<string> {
   const validIds = new Set(countries.map((c) => c.id));
   // Longest name first so "South Korea" matches before a hypothetical
   // shorter substring collision.
@@ -102,23 +123,21 @@ export function matchCountry(
 
   for (const c of sorted) {
     const pattern = new RegExp(`\\b${escapeRegExp(c.name)}\\b`, 'i');
-    if (pattern.test(title)) matches.add(c.id);
+    if (pattern.test(text)) matches.add(c.id);
   }
   for (const [id, words] of Object.entries(DEMONYMS)) {
     if (!validIds.has(id)) continue;
-    if (words.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(title))) {
+    if (words.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(text))) {
       matches.add(id);
     }
   }
   for (const [id, words] of Object.entries(CASE_SENSITIVE_ALIASES)) {
     if (!validIds.has(id)) continue;
-    if (words.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`).test(title))) {
+    if (words.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`).test(text))) {
       matches.add(id);
     }
   }
-
-  // Exactly one clear match; ambiguous (0 or 2+) stays unassigned.
-  return matches.size === 1 ? [...matches][0] : null;
+  return matches;
 }
 
 function escapeRegExp(s: string): string {

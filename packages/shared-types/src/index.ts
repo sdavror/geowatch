@@ -75,6 +75,23 @@ export interface MacroScoreEntry {
   components: Record<string, number> | null;
 }
 
+// Structured event-impact report from the local-LLM analysis layer
+// (POST /admin/analysis/event). Every section is periodized: whatHappened
+// is the event itself, impact horizons are explicit (0–3 / 3–12 months)
+// so the model can't blur a 2030 forecast into "right now".
+export interface EventImpactReport {
+  title: string;
+  summary: string;
+  whatHappened: string;
+  affected: Array<{ actor: string; why: string }>;
+  impactShortTerm: string[]; // 0–3 months
+  impactMediumTerm: string[]; // 3–12 months
+  watchpoints: string[]; // indicators/decisions worth monitoring
+  // Sections composed into one plain-text document (the article page
+  // renders body as pre-wrap text), ready to prefill the editor.
+  body: string;
+}
+
 // Annual GDP data point, parsed from the World Bank API.
 // gdpUsd — current US$; gdpConstUsd — constant 2015 US$ (real GDP).
 // Served by GET /countries/:id/gdp-history.
