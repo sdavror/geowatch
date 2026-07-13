@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { MacroService } from './macro.service';
 import { TradeService } from './trade.service';
+import { EnergyService } from './energy.service';
 import { COUNTRY_HEALTH_METHODOLOGY } from './scoring.util';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -17,7 +18,22 @@ export class MacroController {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly trade: TradeService,
+    private readonly energy: EnergyService,
   ) {}
+
+  /** Global energy benchmarks (Brent/WTI/Henry Hub): latest spot + 30-day change. */
+  @Get('energy')
+  async energyBenchmarks() {
+    const cacheKey = 'macro:energy';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+    const result = await this.energy.latestBenchmarks();
+    if (result.length === 0) {
+      throw new NotFoundException('No energy benchmark data loaded yet');
+    }
+    await this.redis.set(cacheKey, result, CACHE_TTL_SECONDS);
+    return result;
+  }
 
   /** Top trade partners (latest reported year, UN Comtrade) — exports and imports. */
   @Get('trade/:countryId')
@@ -132,7 +148,14 @@ export class MacroAdminController {
   constructor(
     private readonly macro: MacroService,
     private readonly trade: TradeService,
+    private readonly energy: EnergyService,
   ) {}
+
+  /** Manually refresh the energy benchmarks (normally daily at 05:30). */
+  @Post('energy-refresh')
+  energyRefresh() {
+    return this.energy.refreshAll();
+  }
 
   @Post('refresh')
   refresh() {

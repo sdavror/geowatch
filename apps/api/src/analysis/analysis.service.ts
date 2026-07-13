@@ -5,6 +5,7 @@ import { OllamaClient } from './ollama.client';
 import { WORLD_BANK_INDICATORS } from '../macro/worldbank.adapter';
 import { IMF_WEO_INDICATORS } from '../macro/imf-weo.adapter';
 import { matchCountries } from '../ingestion/country-matcher.util';
+import { EnergyService } from '../macro/energy.service';
 
 const INDICATOR_LABELS: Record<string, string> = {
   ...Object.fromEntries(Object.entries(WORLD_BANK_INDICATORS).map(([code, m]) => [`WB:${code}`, m.name])),
@@ -41,6 +42,7 @@ export class AnalysisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ollama: OllamaClient,
+    private readonly energy: EnergyService,
   ) {}
 
   async generateCountryDraft(countryId: string): Promise<GeneratedDraft> {
@@ -59,11 +61,14 @@ export class AnalysisService {
       );
     }
 
-    const involved = await Promise.all(involvedIds.map((id) => this.gatherCountryContext(id)));
+    const [involved, energyBenchmarks] = await Promise.all([
+      Promise.all(involvedIds.map((id) => this.gatherCountryContext(id))),
+      this.energy.latestBenchmarks(),
+    ]);
     const regions = [...new Set(involved.map((c) => c.country.region).filter((r): r is string => !!r))];
     const peers = await this.gatherRegionalPeers(regions, involvedIds);
 
-    const prompt = this.buildEventPrompt(eventText, involved, peers);
+    const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks);
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
     return this.repairEventReport(raw);
   }
@@ -269,6 +274,7 @@ export class AnalysisService {
     eventText: string,
     involved: CountryContext[],
     peers: Array<{ id: string; name: string; region: string | null; healthScore: number | null }>,
+    energyBenchmarks: Array<{ name: string; latestPeriod: string; value: number; units: string; change30dPct: number | null }> = [],
   ): string {
     const lines: string[] = [];
     lines.push(
@@ -284,6 +290,14 @@ export class AnalysisService {
     );
     lines.push('', this.periodizationRules());
     lines.push('', `REPORTED EVENT (unverified): ${eventText.trim()}`);
+
+    if (energyBenchmarks.length > 0) {
+      lines.push('', 'GLOBAL ENERGY BENCHMARKS (market context for energy-related consequences):');
+      for (const b of energyBenchmarks) {
+        const change = b.change30dPct === null ? '' : ` (${b.change30dPct > 0 ? '+' : ''}${b.change30dPct}% over 30 days)`;
+        lines.push(`  - ${b.name}: ${b.value} ${b.units} as of ${b.latestPeriod}${change}`);
+      }
+    }
 
     for (const ctx of involved) {
       lines.push('', `DATA — ${ctx.country.name}${ctx.country.region ? ` (${ctx.country.region})` : ''}:`);

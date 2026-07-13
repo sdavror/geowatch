@@ -184,6 +184,22 @@ model TradeFlow {
   @@map("trade_flows")
 }
 
+// Global energy benchmark prices (EIA Open Data). Deliberately not
+// per-country — Brent/WTI/Henry Hub are world reference prices the
+// analysis layer cites as market context for events.
+model EnergyPrice {
+  id       String   @id @default(uuid()) @db.Uuid
+  series   String   @db.VarChar(16) // EIA series id: RBRTE, RWTC, RNGWHHD
+  period   DateTime @db.Date
+  value    Decimal  @db.Decimal(10, 2)
+  units    String   @db.VarChar(16)
+  loadedAt DateTime @default(now()) @updatedAt @map("loaded_at")
+
+  @@unique([series, period])
+  @@index([series, period])
+  @@map("energy_prices")
+}
+
 // Composite "Country Health" index — percentile-normalized weighted sum of
 // EconomicIndicator + SanctionRecord values. Versioned (methodology) so a
 // future v2 can run alongside v1 for comparison rather than overwriting it.
