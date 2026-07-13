@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { RssAdapter, FetchedItem } from './rss.adapter';
 import { NewsApiAdapter } from './newsapi.adapter';
+import { TelegramAdapter } from './telegram.adapter';
 import { contentHash } from './dedup.util';
 import { classifyCategory } from './category-classifier.util';
 import { matchCountry } from './country-matcher.util';
@@ -20,7 +21,13 @@ import { matchCountry } from './country-matcher.util';
 // own country in headlines). The official set deliberately spans opposing
 // sides of current conflicts — publishing every government's own words,
 // clearly labeled, is the "without bias" positioning.
-const DEFAULT_SOURCES: Array<{ name: string; url: string; official?: boolean; countryId?: string }> = [
+const DEFAULT_SOURCES: Array<{
+  name: string;
+  url: string;
+  type?: 'rss' | 'scraper';
+  official?: boolean;
+  countryId?: string;
+}> = [
   { name: 'BBC World News', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
   { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { name: 'NPR World', url: 'https://feeds.npr.org/1004/rss.xml' },
@@ -56,6 +63,40 @@ const DEFAULT_SOURCES: Array<{ name: string; url: string; official?: boolean; co
     official: true,
     countryId: 'RU',
   },
+  // Telegram official channels (type 'scraper' — fetched via the t.me/s/
+  // public web preview, no credentials). Deliberately symmetric across the
+  // war's sides: head of state + defence ministry each. Posts are in the
+  // channel's own language (Ukrainian/Russian) — they feed the analysis
+  // layer's official-statements context and sit in the moderation queue,
+  // where nothing publishes without an editor.
+  {
+    name: 'President Zelenskyy (Telegram)',
+    url: 'https://t.me/s/V_Zelenskiy_official',
+    type: 'scraper',
+    official: true,
+    countryId: 'UA',
+  },
+  {
+    name: 'Ukraine MoD (Telegram)',
+    url: 'https://t.me/s/ministry_of_defense_ua',
+    type: 'scraper',
+    official: true,
+    countryId: 'UA',
+  },
+  {
+    name: 'Russia MFA (Telegram)',
+    url: 'https://t.me/s/mid_russia',
+    type: 'scraper',
+    official: true,
+    countryId: 'RU',
+  },
+  {
+    name: 'Russia MoD (Telegram)',
+    url: 'https://t.me/s/mod_russia',
+    type: 'scraper',
+    official: true,
+    countryId: 'RU',
+  },
 ];
 
 // Wire stories are time-sensitive — a pending draft an editor hasn't acted
@@ -83,6 +124,7 @@ export class IngestionService implements OnModuleInit {
     private readonly redis: RedisService,
     private readonly rss: RssAdapter,
     private readonly newsApi: NewsApiAdapter,
+    private readonly telegram: TelegramAdapter,
   ) {}
 
   async onModuleInit() {
@@ -132,7 +174,7 @@ export class IngestionService implements OnModuleInit {
       await this.prisma.source.create({
         data: {
           name: s.name,
-          type: 'rss',
+          type: s.type ?? 'rss',
           url: s.url,
           fetchIntervalMinutes: 15,
           official: s.official ?? false,
@@ -141,7 +183,7 @@ export class IngestionService implements OnModuleInit {
       });
       created++;
     }
-    if (created > 0) this.logger.log(`Seeded ${created} default RSS source(s)`);
+    if (created > 0) this.logger.log(`Seeded ${created} default source(s)`);
   }
 
   async runIngestion(): Promise<IngestionSummary> {
@@ -160,16 +202,21 @@ export class IngestionService implements OnModuleInit {
 
     try {
       const countries = await this.prisma.country.findMany({ select: { id: true, name: true } });
-      // Only 'rss' sources go through the RSS adapter — a legacy/placeholder
-      // 'api'-type row (e.g. the original NewsAPI seed entry) is not a feed
-      // and would just fail here; NewsAPI is fetched separately below.
-      const sources = await this.prisma.source.findMany({ where: { active: true, type: 'rss' } });
+      // 'rss' sources go through the RSS adapter; 'scraper' sources with a
+      // t.me URL go through the Telegram web-preview adapter. A legacy
+      // 'api'-type row (the original NewsAPI seed entry) is neither and is
+      // skipped here; NewsAPI is fetched separately below.
+      const sources = await this.prisma.source.findMany({
+        where: { active: true, type: { in: ['rss', 'scraper'] } },
+      });
 
       for (const source of sources) {
+        const isTelegram = source.type === 'scraper' && TelegramAdapter.isTelegramUrl(source.url);
+        if (source.type === 'scraper' && !isTelegram) continue; // no generic scraper exists (yet)
         summary.sourcesChecked++;
         let items: FetchedItem[];
         try {
-          items = await this.rss.fetch(source.url);
+          items = isTelegram ? await this.telegram.fetch(source.url) : await this.rss.fetch(source.url);
         } catch (err) {
           const msg = `Source "${source.name}" failed: ${err instanceof Error ? err.message : err}`;
           this.logger.error(msg);
