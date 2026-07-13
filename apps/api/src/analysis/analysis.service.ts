@@ -31,6 +31,7 @@ interface CountryContext {
   riskHistory: { score: unknown } | null;
   recentArticles: Array<{ title: string; category: string | null; publishedAt: Date | null }>;
   officialStatements: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
+  tradePartners: Array<{ partnerName: string; flow: string; year: number; valueUsd: bigint }>;
 }
 
 const fmtDate = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : 'undated');
@@ -74,7 +75,7 @@ export class AnalysisService {
     });
     if (!country) throw new NotFoundException(`Country "${id}" not found`);
 
-    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements] = await Promise.all([
+    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, tradeFlows] = await Promise.all([
       this.prisma.countryHealthScore.findFirst({
         where: { countryId: id, scoreName: 'country_health' },
         orderBy: { period: 'desc' },
@@ -107,9 +108,27 @@ export class AnalysisService {
         take: 5,
         select: { title: true, publishedAt: true, source: { select: { name: true } } },
       }),
+      this.prisma.tradeFlow.findMany({
+        where: { reporterId: id },
+        orderBy: [{ year: 'desc' }, { valueUsd: 'desc' }],
+        take: 40, // both flows of the latest stored year (≤15 partners each)
+        include: { partner: { select: { name: true } } },
+      }),
     ]);
 
-    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements };
+    // Top-5 per flow is plenty for the prompt — trade concentration, not
+    // the full partner list, is what spillover reasoning needs.
+    const latestTradeYear = tradeFlows[0]?.year;
+    const topPerFlow = (flow: string) =>
+      tradeFlows.filter((t) => t.year === latestTradeYear && t.flow === flow).slice(0, 5);
+    const tradePartners = [...topPerFlow('X'), ...topPerFlow('M')].map((t) => ({
+      partnerName: t.partner.name,
+      flow: t.flow,
+      year: t.year,
+      valueUsd: t.valueUsd,
+    }));
+
+    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, tradePartners };
   }
 
   /**
@@ -188,6 +207,24 @@ export class AnalysisService {
     if (ctx.riskHistory) {
       lines.push(`- Conflict/stability risk score: ${Number(ctx.riskHistory.score).toFixed(1)}/10, status: ${ctx.country.status}.`);
     }
+    if (ctx.tradePartners.length > 0) {
+      const year = ctx.tradePartners[0].year;
+      const fmtBn = (v: bigint) => `$${(Number(v) / 1e9).toFixed(1)}bn`;
+      const exp = ctx.tradePartners.filter((t) => t.flow === 'X');
+      const imp = ctx.tradePartners.filter((t) => t.flow === 'M');
+      if (exp.length > 0) {
+        lines.push(
+          `- Top export destinations (actual ${year}, UN Comtrade): ` +
+            exp.map((t) => `${t.partnerName} ${fmtBn(t.valueUsd)}`).join(', '),
+        );
+      }
+      if (imp.length > 0) {
+        lines.push(
+          `- Top import origins (actual ${year}, UN Comtrade): ` +
+            imp.map((t) => `${t.partnerName} ${fmtBn(t.valueUsd)}`).join(', '),
+        );
+      }
+    }
     if (ctx.recentArticles.length > 0) {
       lines.push('- Recent published headlines about this country:');
       for (const a of ctx.recentArticles) {
@@ -240,7 +277,10 @@ export class AnalysisService {
         `affects and its possible macroeconomic consequences for the region. Ground every claim ` +
         `in the event text or the data sections; do not invent facts. The event is a REPORT, not ` +
         `verified truth — refer to it as "the reported incident", never assert it independently ` +
-        `happened. Stay neutral: no partisan or moralizing tone, no cheering for any side.`,
+        `happened. Stay neutral: no partisan or moralizing tone, no cheering for any side. ` +
+        `Cite concrete figures from the data (trade values with partner and year, scores, sanction ` +
+        `counts) wherever they support a point — "Turkey bought $26.4bn of Russian exports in 2021" ` +
+        `is analysis; "trade may be affected" is filler.`,
     );
     lines.push('', this.periodizationRules());
     lines.push('', `REPORTED EVENT (unverified): ${eventText.trim()}`);
