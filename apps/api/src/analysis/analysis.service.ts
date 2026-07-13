@@ -32,6 +32,7 @@ interface CountryContext {
   riskHistory: { score: unknown } | null;
   recentArticles: Array<{ title: string; category: string | null; publishedAt: Date | null }>;
   officialStatements: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
+  mediaReports: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
   tradePartners: Array<{ partnerName: string; flow: string; year: number; valueUsd: bigint }>;
 }
 
@@ -80,7 +81,7 @@ export class AnalysisService {
     });
     if (!country) throw new NotFoundException(`Country "${id}" not found`);
 
-    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, tradeFlows] = await Promise.all([
+    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradeFlows] = await Promise.all([
       this.prisma.countryHealthScore.findFirst({
         where: { countryId: id, scoreName: 'country_health' },
         orderBy: { period: 'desc' },
@@ -113,6 +114,20 @@ export class AnalysisService {
         take: 5,
         select: { title: true, publishedAt: true, source: { select: { name: true } } },
       }),
+      // Grey-tier local media (Telegram news channels, official:false).
+      // Like official statements they're source data, not our editorial
+      // output — moderation status is irrelevant to their use as context.
+      // Capped to the last 3 days: media noise ages faster than statements.
+      this.prisma.article.findMany({
+        where: {
+          countryId: id,
+          source: { official: false, type: 'scraper' },
+          publishedAt: { gte: new Date(Date.now() - 3 * 24 * 3600 * 1000) },
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 5,
+        select: { title: true, publishedAt: true, source: { select: { name: true } } },
+      }),
       this.prisma.tradeFlow.findMany({
         where: { reporterId: id },
         orderBy: [{ year: 'desc' }, { valueUsd: 'desc' }],
@@ -133,7 +148,7 @@ export class AnalysisService {
       valueUsd: t.valueUsd,
     }));
 
-    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, tradePartners };
+    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners };
   }
 
   /**
@@ -243,6 +258,15 @@ export class AnalysisService {
       );
       for (const s of ctx.officialStatements) {
         lines.push(`  - (${fmtDate(s.publishedAt)}) [${s.source?.name ?? 'Official source'}] ${s.title}`);
+      }
+    }
+    if (ctx.mediaReports.length > 0) {
+      lines.push(
+        '- Recent local media reports (Telegram news channels, UNVERIFIED — ' +
+          'treat strictly as claims by the named outlet, never as established fact; note the outlet\'s origin when weighing it):',
+      );
+      for (const m of ctx.mediaReports) {
+        lines.push(`  - (${fmtDate(m.publishedAt)}) [${m.source?.name ?? 'Media'}] ${m.title}`);
       }
     }
     return lines;

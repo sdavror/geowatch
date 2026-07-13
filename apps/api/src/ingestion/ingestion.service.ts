@@ -125,6 +125,56 @@ const DEFAULT_SOURCES: Array<{
     official: true,
     countryId: 'IN',
   },
+  {
+    name: 'Belarus President Press Pool (Telegram)',
+    url: 'https://t.me/s/pul_1',
+    type: 'scraper',
+    official: true,
+    countryId: 'BY',
+  },
+  // "Grey" tier: major NEWS channels per country (official: false). Telegram
+  // is the primary news medium in several countries this platform covers —
+  // these break stories hours before wire services. Editorially selected to
+  // span each country's spectrum (e.g. exiled-independent Meduza AND state
+  // RIA for Russia), never treated as official statements: the analysis
+  // layer labels them unverified media reports, and nothing publishes
+  // without an editor.
+  {
+    name: 'Suspilne News (Telegram)',
+    url: 'https://t.me/s/suspilnenews',
+    type: 'scraper',
+    countryId: 'UA',
+  },
+  {
+    name: 'Ukrainska Pravda (Telegram)',
+    url: 'https://t.me/s/ukrpravda_news',
+    type: 'scraper',
+    countryId: 'UA',
+  },
+  {
+    name: 'Meduza (Telegram)',
+    url: 'https://t.me/s/meduzalive',
+    type: 'scraper',
+    countryId: 'RU',
+  },
+  {
+    name: 'RIA Novosti (Telegram)',
+    url: 'https://t.me/s/rian_ru',
+    type: 'scraper',
+    countryId: 'RU',
+  },
+  {
+    name: 'NEXTA (Telegram)',
+    url: 'https://t.me/s/nexta_live',
+    type: 'scraper',
+    countryId: 'BY',
+  },
+  {
+    name: 'Abu Ali Express (Telegram)',
+    url: 'https://t.me/s/abualiexpress',
+    type: 'scraper',
+    countryId: 'IL',
+  },
 ];
 
 // Wire stories are time-sensitive — a pending draft an editor hasn't acted
