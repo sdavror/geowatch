@@ -97,6 +97,34 @@ const DEFAULT_SOURCES: Array<{
     official: true,
     countryId: 'RU',
   },
+  // Major-power channels beyond the war's parties. Officialdom was vetted
+  // per channel (Telegram verified badge, or confirmed as the government's
+  // own channel via its website/press): rejected impostors include
+  // t.me/WhiteHouse ("unofficial" per its own tagline) and RegSprecher
+  // (stale personal channel of a spokesperson who left in 2021). China,
+  // Japan and Germany currently have no free official feed or Telegram
+  // presence — known gaps, not oversights.
+  {
+    name: 'Élysée (Telegram)',
+    url: 'https://t.me/s/Elysee',
+    type: 'scraper',
+    official: true,
+    countryId: 'FR',
+  },
+  {
+    name: 'Israel MFA (Telegram)',
+    url: 'https://t.me/s/IsraelMFA',
+    type: 'scraper',
+    official: true,
+    countryId: 'IL',
+  },
+  {
+    name: 'Indian Diplomacy — MEA (Telegram)',
+    url: 'https://t.me/s/IndianDiplomacy',
+    type: 'scraper',
+    official: true,
+    countryId: 'IN',
+  },
 ];
 
 // Wire stories are time-sensitive — a pending draft an editor hasn't acted
