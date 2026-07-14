@@ -71,7 +71,13 @@ export class AnalysisService {
 
     const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks);
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
-    return this.repairEventReport(raw);
+
+    // Built from what was actually non-empty when the prompt was assembled
+    // — not asked of the model, so the citation list can't hallucinate a
+    // source that wasn't really used.
+    const sources = [...new Set([...involved.flatMap((ctx) => this.citationsFor(ctx)), ...(energyBenchmarks.length > 0 ? ['EIA (energy spot prices)'] : []), ...(peers.length > 0 ? ['Apolitics Country Health Index (regional peers)'] : [])])];
+
+    return this.repairEventReport(raw, sources);
   }
 
   private async gatherCountryContext(id: string): Promise<CountryContext> {
@@ -272,6 +278,20 @@ export class AnalysisService {
     return lines;
   }
 
+  /** Citation strings for whichever of this country's data sections were actually non-empty. */
+  private citationsFor(ctx: CountryContext): string[] {
+    const cites: string[] = [];
+    if (ctx.healthScore || ctx.riskHistory) cites.push('Apolitics Country Health Index');
+    if (ctx.indicators.some((i) => !i.isForecast)) cites.push('World Bank (economic indicators)');
+    if (ctx.indicators.some((i) => i.isForecast)) cites.push('IMF World Economic Outlook (forecasts)');
+    if (ctx.sanctions) cites.push('OpenSanctions');
+    if (ctx.tradePartners.length > 0) cites.push('UN Comtrade (bilateral trade data)');
+    if (ctx.recentArticles.length > 0) cites.push('Apolitics published coverage');
+    for (const s of ctx.officialStatements) cites.push(`${s.source?.name ?? 'Official source'} (official statement)`);
+    for (const m of ctx.mediaReports) cites.push(`${m.source?.name ?? 'Media'} (unverified media report)`);
+    return cites;
+  }
+
   private buildCountryPrompt(ctx: CountryContext): string {
     const lines: string[] = [];
     lines.push(
@@ -375,7 +395,7 @@ export class AnalysisService {
   }
 
   /** Coerce whatever the model returned into the report shape, then compose the plain-text body. */
-  private repairEventReport(raw: Record<string, unknown>): EventImpactReport {
+  private repairEventReport(raw: Record<string, unknown>, sources: string[]): EventImpactReport {
     const toStringArray = (v: unknown): string[] => {
       if (Array.isArray(v)) return v.map((x) => String(typeof x === 'object' && x !== null ? JSON.stringify(x) : x)).filter(Boolean);
       if (typeof v === 'string' && v.trim()) return [v.trim()];
@@ -400,6 +420,7 @@ export class AnalysisService {
       impactShortTerm: toStringArray(raw.impact_short_term ?? raw.impactShortTerm),
       impactMediumTerm: toStringArray(raw.impact_medium_term ?? raw.impactMediumTerm),
       watchpoints: toStringArray(raw.watchpoints),
+      sources,
     };
     return { ...report, body: this.composeEventBody(report) };
   }
@@ -420,6 +441,9 @@ export class AnalysisService {
     }
     if (r.watchpoints.length > 0) {
       sections.push('WHAT TO WATCH\n\n' + bullet(r.watchpoints));
+    }
+    if (r.sources.length > 0) {
+      sections.push('SOURCES\n\n' + bullet(r.sources));
     }
     return sections.join('\n\n');
   }

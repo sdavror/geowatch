@@ -27,7 +27,13 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [eventText, setEventText] = useState('');
+  // Pre-fill from the ingested story's own text so enriching an existing
+  // pending article (the common case — ~1000 thin RSS/Telegram snippets
+  // waiting in the queue) takes one click instead of retyping the event.
+  // Still freely editable for describing a brand-new event from scratch.
+  const [eventText, setEventText] = useState(
+    article ? `${article.title}. ${(article.body ?? '').trim()}`.slice(0, 1900) : '',
+  );
   const [analyzingEvent, setAnalyzingEvent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,7 +194,9 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
       </div>
 
       <label className="mb-1 block text-[12px] text-text-secondary">
-        Event impact (describe a reported event; the analysis is grounded in the involved countries&apos; data)
+        {article
+          ? "Enrich from source data — pre-filled from this story; edit if needed, then run"
+          : "Event impact (describe a reported event; the analysis is grounded in the involved countries' data)"}
       </label>
       <div className="mb-3 flex items-start gap-3">
         <textarea
@@ -202,10 +210,10 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
           type="button"
           onClick={handleAnalyzeEvent}
           disabled={analyzingEvent || generating || busy || uploading}
-          title="Structured impact assessment: who is affected, short/medium-term regional macro consequences (local LLM)"
+          title="Structured impact assessment grounded in real data — country health, trade, energy, sanctions, official statements — plus a Sources list (local LLM)"
           className="whitespace-nowrap rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
         >
-          {analyzingEvent ? 'Analyzing…' : '⚡ Analyze event'}
+          {analyzingEvent ? 'Analyzing…' : article ? '🔎 Enrich from source data' : '⚡ Analyze event'}
         </button>
       </div>
 

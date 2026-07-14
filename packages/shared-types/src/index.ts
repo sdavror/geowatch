@@ -87,6 +87,9 @@ export interface EventImpactReport {
   impactShortTerm: string[]; // 0–3 months
   impactMediumTerm: string[]; // 3–12 months
   watchpoints: string[]; // indicators/decisions worth monitoring
+  // Which underlying data actually fed the prompt — computed from what was
+  // non-empty, not asked of the model, so it can't hallucinate a citation.
+  sources: string[];
   // Sections composed into one plain-text document (the article page
   // renders body as pre-wrap text), ready to prefill the editor.
   body: string;
