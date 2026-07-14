@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useAuth, authFetch } from '@/lib/auth';
@@ -125,34 +126,39 @@ export default function AdminPage() {
         </div>
       ) : (
         <div className="mx-auto max-w-4xl px-5 py-6">
-          <div className="mb-5 flex items-center gap-2">
-            <button
-              onClick={() => setTab('news')}
-              className={`rounded-lg px-3 py-1.5 text-xs ${tab === 'news' ? 'bg-bg-3 text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-            >
-              News
-            </button>
-            {isOwner && (
+          <div className="mb-5 flex items-center gap-1.5">
+            {(
+              [
+                { key: 'news' as const, label: 'News', show: true },
+                { key: 'users' as const, label: 'Users', show: isOwner },
+                { key: 'account' as const, label: 'Account', show: true },
+              ].filter((t) => t.show)
+            ).map((t) => (
               <button
-                onClick={() => setTab('users')}
-                className={`rounded-lg px-3 py-1.5 text-xs ${tab === 'users' ? 'bg-bg-3 text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`relative rounded-full px-3.5 py-1.5 text-xs transition-colors ${
+                  tab === t.key ? 'font-semibold text-brand-text' : 'text-text-tertiary hover:text-text-secondary'
+                }`}
               >
-                Users
+                {tab === t.key && (
+                  <motion.span
+                    layoutId="admin-tab-pill"
+                    className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
+                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                  />
+                )}
+                {t.label}
               </button>
-            )}
-            <button
-              onClick={() => setTab('account')}
-              className={`rounded-lg px-3 py-1.5 text-xs ${tab === 'account' ? 'bg-bg-3 text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-            >
-              Account
-            </button>
+            ))}
             {tab === 'news' && !editing && (
-              <button
+              <motion.button
+                whileTap={{ scale: 0.96 }}
                 onClick={() => setEditing('new')}
-                className="ml-auto rounded-lg bg-brand-bg px-4 py-1.5 text-xs font-medium text-brand-text hover:opacity-90"
+                className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-xs font-medium text-brand-text hover:opacity-90"
               >
                 + New story
-              </button>
+              </motion.button>
             )}
           </div>
 
@@ -185,21 +191,38 @@ export default function AdminPage() {
                   <button
                     key={f}
                     onClick={() => setNewsFilter(f)}
-                    className={`rounded-full px-3 py-1 text-[12px] capitalize ${
+                    className={`relative rounded-full px-3 py-1 text-[12px] capitalize transition-colors ${
                       newsFilter === f
-                        ? 'bg-brand-bg text-brand-text'
+                        ? 'font-medium text-brand-text'
                         : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
                     }`}
                   >
+                    {newsFilter === f && (
+                      <motion.span
+                        layoutId="admin-filter-pill"
+                        className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
+                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                      />
+                    )}
                     {f} {f === 'pending' ? counts.pending : f === 'published' ? counts.published : counts.total}
                   </button>
                 ))}
               </div>
               {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
-              <div className="flex flex-col gap-1">
+              <motion.div
+                key={newsFilter}
+                initial="hidden"
+                animate="visible"
+                variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
+                className="flex flex-col gap-1"
+              >
                 {articles.map((a) => (
-                  <div
+                  <motion.div
                     key={a.id}
+                    variants={{
+                      hidden: { opacity: 0, y: 8 },
+                      visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
+                    }}
                     className="flex items-center gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2"
                   >
                     <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
@@ -241,7 +264,7 @@ export default function AdminPage() {
                     >
                       Delete
                     </button>
-                  </div>
+                  </motion.div>
                 ))}
                 {articles.length === 0 && !listError && (
                   <p className="py-8 text-center text-xs text-text-tertiary">
@@ -252,7 +275,7 @@ export default function AdminPage() {
                         : 'No stories yet. Create your first one.'}
                   </p>
                 )}
-              </div>
+              </motion.div>
             </>
           )}
         </div>
