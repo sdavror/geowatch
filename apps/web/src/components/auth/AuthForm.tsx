@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { Mark } from '@/components/Logo';
 
@@ -37,12 +38,22 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <div className="w-full max-w-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-sm"
+      >
         <div className="mb-6 text-center">
-          <div className="flex items-center justify-center gap-2">
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+            className="flex items-center justify-center gap-2"
+          >
             <Mark size={26} />
             <span className="text-lg font-semibold tracking-wide text-text-primary">Apolitics</span>
-          </div>
+          </motion.div>
           <p className="mt-1 text-[12px] text-text-tertiary">apolitically about politics · without bias</p>
           <p className="mt-3 text-xs text-text-tertiary">
             {isRegister ? 'Create your account' : 'Sign in to continue'}
@@ -51,7 +62,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
         <form
           onSubmit={handleSubmit}
-          className="rounded-2xl border border-border/10 bg-bg-2 p-5 shadow-lg"
+          className="rounded-2xl border border-border/10 bg-bg-2 p-5 shadow-card"
         >
           <label className="mb-1 block text-[12px] text-text-secondary">Email</label>
           <input
@@ -74,15 +85,24 @@ export function AuthForm({ mode }: AuthFormProps) {
             className="w-full rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
           />
 
-          {error && <p className="mt-3 text-xs text-status-conflict">{error}</p>}
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="mt-3 text-xs text-status-conflict"
+            >
+              {error}
+            </motion.p>
+          )}
 
-          <button
+          <motion.button
             type="submit"
             disabled={busy}
-            className="mt-4 w-full rounded-full bg-brand py-2.5 text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+            whileTap={{ scale: 0.97 }}
+            className="mt-4 w-full rounded-full bg-brand py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
-          </button>
+          </motion.button>
         </form>
 
         <p className="mt-4 text-center text-xs text-text-tertiary">
@@ -107,7 +127,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             ← Back to Apolitics
           </Link>
         </p>
-      </div>
+      </motion.div>
     </main>
   );
 }
