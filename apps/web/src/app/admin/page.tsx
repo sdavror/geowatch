@@ -14,6 +14,15 @@ import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { mediaUrl } from '@/lib/api';
+
+// A one-line gauge of "is there anything here" for the moderation queue —
+// most ingested stories are RSS excerpts a few sentences long, and an
+// editor needs to judge that at a glance across ~1000 pending rows without
+// opening each one in the full editor.
+function wordCount(text: string | null | undefined): number {
+  return text?.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
 function NewsSection() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -122,62 +131,83 @@ function NewsSection() {
             variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
             className="flex flex-col gap-1"
           >
-            {articles.map((a) => (
-              <motion.div
-                key={a.id}
-                variants={{
-                  hidden: { opacity: 0, y: 8 },
-                  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 450, damping: 34 } },
-                }}
-                className="flex items-center gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2"
-              >
-                <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[14px] text-text-primary">{a.title}</div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-                    {a.category && (
-                      <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
-                        {CATEGORY_LABEL[a.category as EventCategory]}
-                      </span>
+            {articles.map((a) => {
+              const snippet = (a.aiSummary || a.body || '').trim();
+              const words = wordCount(a.aiSummary || a.body);
+              const thumb = mediaUrl(a.imageUrl);
+              return (
+                <motion.div
+                  key={a.id}
+                  variants={{
+                    hidden: { opacity: 0, y: 8 },
+                    visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 450, damping: 34 } },
+                  }}
+                  className="flex items-start gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2.5"
+                >
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg-3">
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumb} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
                     )}
-                    {a.source && (
-                      <span className="flex items-center gap-1 text-text-tertiary">
-                        {a.source.name}
-                        {a.source.official && (
-                          <span className="rounded-full bg-brand-bg px-1.5 py-0 text-[10px] font-medium text-brand-text">
-                            Official
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    <span className="text-text-tertiary">
-                      {formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
-                    </span>
-                    <span className={a.published ? 'text-status-stable' : 'text-text-tertiary'}>
-                      ● {a.published ? 'Published' : 'Draft'}
-                    </span>
                   </div>
-                </div>
-                <button
-                  onClick={() => togglePublish(a)}
-                  className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
-                >
-                  {a.published ? 'Unpublish' : 'Publish'}
-                </button>
-                <button
-                  onClick={() => setEditing(a)}
-                  className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(a.id)}
-                  className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-tertiary hover:text-status-conflict"
-                >
-                  Delete
-                </button>
-              </motion.div>
-            ))}
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="truncate text-[14px] text-text-primary">{a.title}</div>
+                    {snippet && (
+                      <div className="mt-0.5 truncate text-[12px] text-text-tertiary">{snippet}</div>
+                    )}
+                    <div className="mt-1 flex items-center gap-2 text-[11px]">
+                      {a.category && (
+                        <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
+                          {CATEGORY_LABEL[a.category as EventCategory]}
+                        </span>
+                      )}
+                      {a.source && (
+                        <span className="flex items-center gap-1 text-text-tertiary">
+                          {a.source.name}
+                          {a.source.official && (
+                            <span className="rounded-full bg-brand-bg px-1.5 py-0 text-[10px] font-medium text-brand-text">
+                              Official
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      <span className="text-text-tertiary">
+                        {formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
+                      </span>
+                      <span className={a.published ? 'text-status-stable' : 'text-text-tertiary'}>
+                        ● {a.published ? 'Published' : 'Draft'}
+                      </span>
+                      <span className={words === 0 ? 'text-status-conflict' : words < 30 ? 'text-status-crisis' : 'text-text-tertiary'}>
+                        {words === 0 ? 'No body text' : `${words} words`}
+                      </span>
+                      {!thumb && <span className="text-text-tertiary">No photo</span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-2 self-center">
+                    <button
+                      onClick={() => togglePublish(a)}
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
+                    >
+                      {a.published ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      onClick={() => setEditing(a)}
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(a.id)}
+                      className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-tertiary hover:text-status-conflict"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
             {articles.length === 0 && !listError && (
               <p className="py-8 text-center text-xs text-text-tertiary">
                 {newsFilter === 'pending'
