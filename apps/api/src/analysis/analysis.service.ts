@@ -5,6 +5,7 @@ import { OllamaClient } from './ollama.client';
 import { WORLD_BANK_INDICATORS } from '../macro/worldbank.adapter';
 import { IMF_WEO_INDICATORS } from '../macro/imf-weo.adapter';
 import { matchCountries } from '../ingestion/country-matcher.util';
+import { EnergyService } from '../macro/energy.service';
 
 const INDICATOR_LABELS: Record<string, string> = {
   ...Object.fromEntries(Object.entries(WORLD_BANK_INDICATORS).map(([code, m]) => [`WB:${code}`, m.name])),
@@ -31,6 +32,8 @@ interface CountryContext {
   riskHistory: { score: unknown } | null;
   recentArticles: Array<{ title: string; category: string | null; publishedAt: Date | null }>;
   officialStatements: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
+  mediaReports: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
+  tradePartners: Array<{ partnerName: string; flow: string; year: number; valueUsd: bigint }>;
 }
 
 const fmtDate = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : 'undated');
@@ -40,6 +43,7 @@ export class AnalysisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ollama: OllamaClient,
+    private readonly energy: EnergyService,
   ) {}
 
   async generateCountryDraft(countryId: string): Promise<GeneratedDraft> {
@@ -58,11 +62,14 @@ export class AnalysisService {
       );
     }
 
-    const involved = await Promise.all(involvedIds.map((id) => this.gatherCountryContext(id)));
+    const [involved, energyBenchmarks] = await Promise.all([
+      Promise.all(involvedIds.map((id) => this.gatherCountryContext(id))),
+      this.energy.latestBenchmarks(),
+    ]);
     const regions = [...new Set(involved.map((c) => c.country.region).filter((r): r is string => !!r))];
     const peers = await this.gatherRegionalPeers(regions, involvedIds);
 
-    const prompt = this.buildEventPrompt(eventText, involved, peers);
+    const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks);
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
     return this.repairEventReport(raw);
   }
@@ -74,7 +81,7 @@ export class AnalysisService {
     });
     if (!country) throw new NotFoundException(`Country "${id}" not found`);
 
-    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements] = await Promise.all([
+    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradeFlows] = await Promise.all([
       this.prisma.countryHealthScore.findFirst({
         where: { countryId: id, scoreName: 'country_health' },
         orderBy: { period: 'desc' },
@@ -107,9 +114,41 @@ export class AnalysisService {
         take: 5,
         select: { title: true, publishedAt: true, source: { select: { name: true } } },
       }),
+      // Grey-tier local media (Telegram news channels, official:false).
+      // Like official statements they're source data, not our editorial
+      // output — moderation status is irrelevant to their use as context.
+      // Capped to the last 3 days: media noise ages faster than statements.
+      this.prisma.article.findMany({
+        where: {
+          countryId: id,
+          source: { official: false, type: 'scraper' },
+          publishedAt: { gte: new Date(Date.now() - 3 * 24 * 3600 * 1000) },
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 5,
+        select: { title: true, publishedAt: true, source: { select: { name: true } } },
+      }),
+      this.prisma.tradeFlow.findMany({
+        where: { reporterId: id },
+        orderBy: [{ year: 'desc' }, { valueUsd: 'desc' }],
+        take: 40, // both flows of the latest stored year (≤15 partners each)
+        include: { partner: { select: { name: true } } },
+      }),
     ]);
 
-    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements };
+    // Top-5 per flow is plenty for the prompt — trade concentration, not
+    // the full partner list, is what spillover reasoning needs.
+    const latestTradeYear = tradeFlows[0]?.year;
+    const topPerFlow = (flow: string) =>
+      tradeFlows.filter((t) => t.year === latestTradeYear && t.flow === flow).slice(0, 5);
+    const tradePartners = [...topPerFlow('X'), ...topPerFlow('M')].map((t) => ({
+      partnerName: t.partner.name,
+      flow: t.flow,
+      year: t.year,
+      valueUsd: t.valueUsd,
+    }));
+
+    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners };
   }
 
   /**
@@ -188,6 +227,24 @@ export class AnalysisService {
     if (ctx.riskHistory) {
       lines.push(`- Conflict/stability risk score: ${Number(ctx.riskHistory.score).toFixed(1)}/10, status: ${ctx.country.status}.`);
     }
+    if (ctx.tradePartners.length > 0) {
+      const year = ctx.tradePartners[0].year;
+      const fmtBn = (v: bigint) => `$${(Number(v) / 1e9).toFixed(1)}bn`;
+      const exp = ctx.tradePartners.filter((t) => t.flow === 'X');
+      const imp = ctx.tradePartners.filter((t) => t.flow === 'M');
+      if (exp.length > 0) {
+        lines.push(
+          `- Top export destinations (actual ${year}, UN Comtrade): ` +
+            exp.map((t) => `${t.partnerName} ${fmtBn(t.valueUsd)}`).join(', '),
+        );
+      }
+      if (imp.length > 0) {
+        lines.push(
+          `- Top import origins (actual ${year}, UN Comtrade): ` +
+            imp.map((t) => `${t.partnerName} ${fmtBn(t.valueUsd)}`).join(', '),
+        );
+      }
+    }
     if (ctx.recentArticles.length > 0) {
       lines.push('- Recent published headlines about this country:');
       for (const a of ctx.recentArticles) {
@@ -201,6 +258,15 @@ export class AnalysisService {
       );
       for (const s of ctx.officialStatements) {
         lines.push(`  - (${fmtDate(s.publishedAt)}) [${s.source?.name ?? 'Official source'}] ${s.title}`);
+      }
+    }
+    if (ctx.mediaReports.length > 0) {
+      lines.push(
+        '- Recent local media reports (Telegram news channels, UNVERIFIED — ' +
+          'treat strictly as claims by the named outlet, never as established fact; note the outlet\'s origin when weighing it):',
+      );
+      for (const m of ctx.mediaReports) {
+        lines.push(`  - (${fmtDate(m.publishedAt)}) [${m.source?.name ?? 'Media'}] ${m.title}`);
       }
     }
     return lines;
@@ -232,6 +298,7 @@ export class AnalysisService {
     eventText: string,
     involved: CountryContext[],
     peers: Array<{ id: string; name: string; region: string | null; healthScore: number | null }>,
+    energyBenchmarks: Array<{ name: string; latestPeriod: string; value: number; units: string; change30dPct: number | null }> = [],
   ): string {
     const lines: string[] = [];
     lines.push(
@@ -240,10 +307,21 @@ export class AnalysisService {
         `affects and its possible macroeconomic consequences for the region. Ground every claim ` +
         `in the event text or the data sections; do not invent facts. The event is a REPORT, not ` +
         `verified truth — refer to it as "the reported incident", never assert it independently ` +
-        `happened. Stay neutral: no partisan or moralizing tone, no cheering for any side.`,
+        `happened. Stay neutral: no partisan or moralizing tone, no cheering for any side. ` +
+        `Cite concrete figures from the data (trade values with partner and year, scores, sanction ` +
+        `counts) wherever they support a point — "Turkey bought $26.4bn of Russian exports in 2021" ` +
+        `is analysis; "trade may be affected" is filler.`,
     );
     lines.push('', this.periodizationRules());
     lines.push('', `REPORTED EVENT (unverified): ${eventText.trim()}`);
+
+    if (energyBenchmarks.length > 0) {
+      lines.push('', 'GLOBAL ENERGY BENCHMARKS (market context for energy-related consequences):');
+      for (const b of energyBenchmarks) {
+        const change = b.change30dPct === null ? '' : ` (${b.change30dPct > 0 ? '+' : ''}${b.change30dPct}% over 30 days)`;
+        lines.push(`  - ${b.name}: ${b.value} ${b.units} as of ${b.latestPeriod}${change}`);
+      }
+    }
 
     for (const ctx of involved) {
       lines.push('', `DATA — ${ctx.country.name}${ctx.country.region ? ` (${ctx.country.region})` : ''}:`);

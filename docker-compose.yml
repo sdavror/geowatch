@@ -58,6 +58,7 @@ services:
       ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-ChangeMe123!}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      EIA_API_KEY: ${EIA_API_KEY:-}
     ports:
       - '4000:4000'
     networks:

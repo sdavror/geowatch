@@ -2,6 +2,8 @@ import { Controller, Get, NotFoundException, Param, Query, UseGuards, Post } fro
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { MacroService } from './macro.service';
+import { TradeService } from './trade.service';
+import { EnergyService } from './energy.service';
 import { COUNTRY_HEALTH_METHODOLOGY } from './scoring.util';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,7 +17,38 @@ export class MacroController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly trade: TradeService,
+    private readonly energy: EnergyService,
   ) {}
+
+  /** Global energy benchmarks (Brent/WTI/Henry Hub): latest spot + 30-day change. */
+  @Get('energy')
+  async energyBenchmarks() {
+    const cacheKey = 'macro:energy';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+    const result = await this.energy.latestBenchmarks();
+    if (result.length === 0) {
+      throw new NotFoundException('No energy benchmark data loaded yet');
+    }
+    await this.redis.set(cacheKey, result, CACHE_TTL_SECONDS);
+    return result;
+  }
+
+  /** Top trade partners (latest reported year, UN Comtrade) — exports and imports. */
+  @Get('trade/:countryId')
+  async tradePartners(@Param('countryId') countryId: string) {
+    const id = countryId.toUpperCase();
+    const cacheKey = `macro:trade:${id}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+    const result = await this.trade.topPartners(id);
+    if (result.year === null) {
+      throw new NotFoundException(`No trade data for country "${id}"`);
+    }
+    await this.redis.set(cacheKey, result, CACHE_TTL_SECONDS);
+    return result;
+  }
 
   /** Ranking of every scored country — powers a map/table view. */
   @Get('scores')
@@ -112,10 +145,34 @@ export class MacroController {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('editor')
 export class MacroAdminController {
-  constructor(private readonly macro: MacroService) {}
+  constructor(
+    private readonly macro: MacroService,
+    private readonly trade: TradeService,
+    private readonly energy: EnergyService,
+  ) {}
+
+  /** Manually refresh the energy benchmarks (normally daily at 05:30). */
+  @Post('energy-refresh')
+  energyRefresh() {
+    return this.energy.refreshAll();
+  }
 
   @Post('refresh')
   refresh() {
     return this.macro.refreshAll();
+  }
+
+  /** Full trade refresh is slow (rate-limit pacing) — runs in background, weekly cron covers it normally. */
+  @Post('trade-refresh')
+  tradeRefresh() {
+    void this.trade.refreshAll();
+    return { started: true };
+  }
+
+  /** Refresh a single country's trade partners synchronously (verification/debug). */
+  @Post('trade-refresh/:countryId')
+  async tradeRefreshCountry(@Param('countryId') countryId: string) {
+    const rows = await this.trade.refreshCountry(countryId);
+    return { countryId: countryId.toUpperCase(), rowsUpserted: rows };
   }
 }
