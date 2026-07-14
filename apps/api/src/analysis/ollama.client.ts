@@ -27,6 +27,16 @@ export class OllamaClient {
     return this.config.get('OLLAMA_MODEL', DEFAULT_MODEL);
   }
 
+  /** Cheap liveness check for the admin dashboard — hits Ollama's version endpoint, no inference. */
+  async isReachable(): Promise<{ reachable: boolean; model: string }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/version`, { signal: AbortSignal.timeout(3_000) });
+      return { reachable: res.ok, model: this.model };
+    } catch {
+      return { reachable: false, model: this.model };
+    }
+  }
+
   /** Sends a prompt, forcing valid-JSON output (Ollama's `format: "json"`), and parses it as T. */
   async generateJson<T>(prompt: string): Promise<T> {
     const controller = new AbortController();

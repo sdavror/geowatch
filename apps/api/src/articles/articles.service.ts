@@ -138,7 +138,10 @@ export class ArticlesService {
       where: published === undefined ? undefined : { published },
       orderBy: { createdAt: published === false ? 'asc' : 'desc' },
       take: 200,
-      include: { country: true },
+      include: {
+        country: true,
+        source: { select: { id: true, name: true, type: true, official: true } },
+      },
     });
     return articles.map((a) => this.serializeArticle(a, true));
   }
@@ -281,6 +284,7 @@ export class ArticlesService {
       sentimentScore: Prisma.Decimal | null;
       imageUrl?: string | null;
       published?: boolean;
+      source?: { id: string; name: string; type: string | null; official: boolean } | null;
     },
     includeBody = false,
   ) {
@@ -305,6 +309,9 @@ export class ArticlesService {
       sentimentScore: a.sentimentScore ? Number(a.sentimentScore) : null,
       imageUrl: a.imageUrl ?? null,
       published: a.published ?? false,
+      // Only present when the caller's query included the relation (admin
+      // list) — public-facing queries don't fetch it, so this stays undefined.
+      source: a.source ?? undefined,
     };
   }
 }

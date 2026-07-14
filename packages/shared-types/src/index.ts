@@ -169,16 +169,24 @@ export interface Source {
   type: SourceType | null;
   url: string;
   active: boolean;
+  official: boolean;
+  countryId: string | null;
   fetchIntervalMinutes: number;
   lastFetched: string | null;
   articleCount: number;
   createdAt: string;
 }
 
+// GET /admin/analysis/ollama-status — local-LLM dashboard health tile.
+export interface OllamaStatus {
+  reachable: boolean;
+  model: string;
+}
+
 export interface Article {
   id: string;
   sourceId?: string | null;
-  source?: Pick<Source, 'id' | 'name' | 'type'>;
+  source?: Pick<Source, 'id' | 'name' | 'type' | 'official'>;
   countryId: string | null;
   country?: Pick<Country, 'id' | 'name' | 'flagEmoji'> & { status?: CountryStatus };
   url: string;
