@@ -6,6 +6,7 @@ import { RiskScoreBar } from './RiskScoreBar';
 import { EventTimeline } from './EventTimeline';
 import { GdpIndicator } from './GdpIndicator';
 import { PopulationIndicator } from './PopulationIndicator';
+import { TradePartnersWidget } from './TradePartnersWidget';
 
 interface CountrySidebarProps {
   countryId: string | null;
@@ -80,6 +81,8 @@ export function CountrySidebar({ countryId, onClose }: CountrySidebarProps) {
               <PopulationIndicator countryId={country.id} />
               <GdpIndicator gdpUsd={country.gdpUsd} />
             </div>
+
+            <TradePartnersWidget countryId={country.id} />
 
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
               Recent Events

@@ -92,6 +92,34 @@ export interface EventImpactReport {
   body: string;
 }
 
+// One country's top trade partners for its latest reported year (UN
+// Comtrade, current US$). Served by GET /macro/trade/:countryId.
+export interface TradePartnerEntry {
+  partnerId: string;
+  partnerName: string;
+  flagEmoji: string | null;
+  valueUsd: number;
+}
+
+export interface TradePartnersResponse {
+  countryId: string;
+  year: number;
+  exports: TradePartnerEntry[];
+  imports: TradePartnerEntry[];
+}
+
+// Global energy benchmark (Brent/WTI/Henry Hub spot), latest value + 30-day
+// change. Series is not per-country — these are world reference prices.
+// Served by GET /macro/energy.
+export interface EnergyBenchmarkEntry {
+  series: string;
+  name: string;
+  latestPeriod: string; // YYYY-MM-DD
+  value: number;
+  units: string;
+  change30dPct: number | null;
+}
+
 // Annual GDP data point, parsed from the World Bank API.
 // gdpUsd — current US$; gdpConstUsd — constant 2015 US$ (real GDP).
 // Served by GET /countries/:id/gdp-history.
