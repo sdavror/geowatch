@@ -27,8 +27,15 @@ export class SourcesController {
   ) {}
 
   @Get()
-  list() {
-    return this.prisma.source.findMany({ orderBy: { createdAt: 'asc' } });
+  async list() {
+    // The stored `articleCount` column is never incremented anywhere in the
+    // ingestion path (dead field) — compute the real count from the
+    // articles relation instead of surfacing a permanently-0 number.
+    const sources = await this.prisma.source.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: { _count: { select: { articles: true } } },
+    });
+    return sources.map(({ _count, ...s }) => ({ ...s, articleCount: _count.articles }));
   }
 
   @Post()

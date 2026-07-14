@@ -1,28 +1,34 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useAuth, authFetch } from '@/lib/auth';
+import { AdminShell, type AdminSection } from '@/components/admin/AdminShell';
+import { DashboardOverview } from '@/components/admin/DashboardOverview';
+import { SourcesManager } from '@/components/admin/SourcesManager';
 import { ArticleEditor } from '@/components/admin/ArticleEditor';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
-import { Logo } from '@/components/Logo';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { mediaUrl } from '@/lib/api';
 
-export default function AdminPage() {
-  const router = useRouter();
-  const { user, loading, canEdit, isOwner, logout } = useAuth();
+// A one-line gauge of "is there anything here" for the moderation queue —
+// most ingested stories are RSS excerpts a few sentences long, and an
+// editor needs to judge that at a glance across ~1000 pending rows without
+// opening each one in the full editor.
+function wordCount(text: string | null | undefined): number {
+  return text?.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
+function NewsSection() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [counts, setCounts] = useState({ pending: 0, published: 0, total: 0 });
   const [listError, setListError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Article | null | 'new'>(null);
-  const [tab, setTab] = useState<'news' | 'users' | 'account'>('news');
   // Moderation queue defaults to "Pending" — ingestion drops new stories in
   // unreviewed, so that's what an editor opening this page needs to see first.
   const [newsFilter, setNewsFilter] = useState<'pending' | 'published' | 'all'>('pending');
@@ -43,13 +49,8 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace('/login');
-      return;
-    }
-    if (canEdit) void loadArticles(newsFilter);
-  }, [loading, user, canEdit, loadArticles, newsFilter, router]);
+    void loadArticles(newsFilter);
+  }, [newsFilter, loadArticles]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this story permanently?')) return;
@@ -73,179 +74,118 @@ export default function AdminPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <main className="flex h-screen items-center justify-center bg-bg">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border/10 border-t-accent-blue" />
-      </main>
-    );
-  }
-
-  if (!user) return null;
-
   return (
-    <main className="min-h-screen bg-bg">
-      <header className="flex h-12 items-center gap-4 border-b border-border/10 bg-bg-2/70 px-5 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          <Logo href="/admin" />
-          <span className="text-[15px] font-semibold tracking-wide text-text-tertiary">Admin</span>
-        </div>
-        <Link href="/" className="text-[12px] text-text-tertiary hover:text-brand-text">
-          ← Site
-        </Link>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-[12px] text-text-tertiary">
-            {user.email} · <span className="text-brand-text">{user.role}</span>
-          </span>
+    <div>
+      <div className="mb-5 flex items-center gap-1.5">
+        <h1 className="mr-2 text-lg font-bold text-text-primary">News</h1>
+        {!editing && (
           <button
-            onClick={logout}
-            className="rounded-md border border-border/10 bg-bg-3 px-2.5 py-1 text-[12px] text-text-secondary hover:bg-bg-4"
+            onClick={() => setEditing('new')}
+            className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-xs font-medium text-brand-text hover:opacity-90"
           >
-            Sign out
+            + New story
           </button>
-        </div>
-      </header>
+        )}
+      </div>
 
-      {!canEdit ? (
-        <div className="mx-auto max-w-md px-5 py-12">
-          <div className="mb-6 text-center">
-            <p className="text-sm text-text-primary">Your account doesn&apos;t have editor access yet.</p>
-            <p className="mt-2 text-xs text-text-tertiary">
-              Ask an administrator to promote your account to editor. You can still manage your
-              account below.
-            </p>
-            <Link
-              href="/"
-              className="mt-3 inline-block text-xs text-brand-text hover:underline"
-            >
-              ← Back to Apolitics
-            </Link>
-          </div>
-          <ProfileForm />
-          <ChangePasswordForm />
+      {editing && (
+        <div className="mb-6">
+          <ArticleEditor
+            article={editing === 'new' ? null : editing}
+            onSaved={() => {
+              setEditing(null);
+              void loadArticles(newsFilter);
+            }}
+            onCancel={() => setEditing(null)}
+          />
         </div>
-      ) : (
-        <div className="mx-auto max-w-4xl px-5 py-6">
-          <div className="mb-5 flex items-center gap-1.5">
-            {(
-              [
-                { key: 'news' as const, label: 'News', show: true },
-                { key: 'users' as const, label: 'Users', show: isOwner },
-                { key: 'account' as const, label: 'Account', show: true },
-              ].filter((t) => t.show)
-            ).map((t) => (
+      )}
+
+      {!editing && (
+        <>
+          <div className="mb-4 flex items-center gap-1.5">
+            {(['pending', 'published', 'all'] as const).map((f) => (
               <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`relative rounded-full px-3.5 py-1.5 text-xs transition-colors ${
-                  tab === t.key ? 'font-semibold text-brand-text' : 'text-text-tertiary hover:text-text-secondary'
+                key={f}
+                onClick={() => setNewsFilter(f)}
+                className={`relative rounded-full px-3 py-1 text-[12px] capitalize transition-colors ${
+                  newsFilter === f ? 'font-medium text-brand-text' : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
                 }`}
               >
-                {tab === t.key && (
+                {newsFilter === f && (
                   <motion.span
-                    layoutId="admin-tab-pill"
+                    layoutId="admin-filter-pill"
                     className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
                     transition={{ type: 'spring', stiffness: 500, damping: 34 }}
                   />
                 )}
-                {t.label}
+                {f} {f === 'pending' ? counts.pending : f === 'published' ? counts.published : counts.total}
               </button>
             ))}
-            {tab === 'news' && !editing && (
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setEditing('new')}
-                className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-xs font-medium text-brand-text hover:opacity-90"
-              >
-                + New story
-              </motion.button>
-            )}
           </div>
-
-          {tab === 'users' && isOwner && <UserManager />}
-
-          {tab === 'account' && (
-            <>
-              <ProfileForm />
-              <ChangePasswordForm />
-            </>
-          )}
-
-          {tab === 'news' && editing && (
-            <div className="mb-6">
-              <ArticleEditor
-                article={editing === 'new' ? null : editing}
-                onSaved={() => {
-                  setEditing(null);
-                  void loadArticles(newsFilter);
-                }}
-                onCancel={() => setEditing(null)}
-              />
-            </div>
-          )}
-
-          {tab === 'news' && !editing && (
-            <>
-              <div className="mb-4 flex items-center gap-1.5">
-                {(['pending', 'published', 'all'] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setNewsFilter(f)}
-                    className={`relative rounded-full px-3 py-1 text-[12px] capitalize transition-colors ${
-                      newsFilter === f
-                        ? 'font-medium text-brand-text'
-                        : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
-                    }`}
-                  >
-                    {newsFilter === f && (
-                      <motion.span
-                        layoutId="admin-filter-pill"
-                        className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
-                        transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                      />
+          {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
+          <motion.div
+            key={newsFilter}
+            initial="hidden"
+            animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
+            className="flex flex-col gap-1"
+          >
+            {articles.map((a) => {
+              const snippet = (a.aiSummary || a.body || '').trim();
+              const words = wordCount(a.aiSummary || a.body);
+              const thumb = mediaUrl(a.imageUrl);
+              return (
+                <motion.div
+                  key={a.id}
+                  variants={{
+                    hidden: { opacity: 0, y: 8 },
+                    visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 450, damping: 34 } },
+                  }}
+                  className="flex items-start gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2.5"
+                >
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg-3">
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumb} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
                     )}
-                    {f} {f === 'pending' ? counts.pending : f === 'published' ? counts.published : counts.total}
-                  </button>
-                ))}
-              </div>
-              {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
-              <motion.div
-                key={newsFilter}
-                initial="hidden"
-                animate="visible"
-                variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
-                className="flex flex-col gap-1"
-              >
-                {articles.map((a) => (
-                  <motion.div
-                    key={a.id}
-                    variants={{
-                      hidden: { opacity: 0, y: 8 },
-                      visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
-                    }}
-                    className="flex items-center gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2"
-                  >
-                    <span className="text-lg">{a.country?.flagEmoji ?? '🌐'}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] text-text-primary">{a.title}</div>
-                      <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-                        {a.category && (
-                          <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
-                            {CATEGORY_LABEL[a.category as EventCategory]}
-                          </span>
-                        )}
-                        <span className="text-text-tertiary">
-                          {formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="truncate text-[14px] text-text-primary">{a.title}</div>
+                    {snippet && (
+                      <div className="mt-0.5 truncate text-[12px] text-text-tertiary">{snippet}</div>
+                    )}
+                    <div className="mt-1 flex items-center gap-2 text-[11px]">
+                      {a.category && (
+                        <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
+                          {CATEGORY_LABEL[a.category as EventCategory]}
                         </span>
-                        <span
-                          className={
-                            a.published ? 'text-status-stable' : 'text-text-tertiary'
-                          }
-                        >
-                          ● {a.published ? 'Published' : 'Draft'}
+                      )}
+                      {a.source && (
+                        <span className="flex items-center gap-1 text-text-tertiary">
+                          {a.source.name}
+                          {a.source.official && (
+                            <span className="rounded-full bg-brand-bg px-1.5 py-0 text-[10px] font-medium text-brand-text">
+                              Official
+                            </span>
+                          )}
                         </span>
-                      </div>
+                      )}
+                      <span className="text-text-tertiary">
+                        {formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
+                      </span>
+                      <span className={a.published ? 'text-status-stable' : 'text-text-tertiary'}>
+                        ● {a.published ? 'Published' : 'Draft'}
+                      </span>
+                      <span className={words === 0 ? 'text-status-conflict' : words < 30 ? 'text-status-crisis' : 'text-text-tertiary'}>
+                        {words === 0 ? 'No body text' : `${words} words`}
+                      </span>
+                      {!thumb && <span className="text-text-tertiary">No photo</span>}
                     </div>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-2 self-center">
                     <button
                       onClick={() => togglePublish(a)}
                       className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
@@ -264,22 +204,76 @@ export default function AdminPage() {
                     >
                       Delete
                     </button>
-                  </motion.div>
-                ))}
-                {articles.length === 0 && !listError && (
-                  <p className="py-8 text-center text-xs text-text-tertiary">
-                    {newsFilter === 'pending'
-                      ? 'No pending stories — the queue is clear.'
-                      : newsFilter === 'published'
-                        ? 'Nothing published yet.'
-                        : 'No stories yet. Create your first one.'}
-                  </p>
-                )}
-              </motion.div>
-            </>
-          )}
+                  </div>
+                </motion.div>
+              );
+            })}
+            {articles.length === 0 && !listError && (
+              <p className="py-8 text-center text-xs text-text-tertiary">
+                {newsFilter === 'pending'
+                  ? 'No pending stories — the queue is clear.'
+                  : newsFilter === 'published'
+                    ? 'Nothing published yet.'
+                    : 'No stories yet. Create your first one.'}
+              </p>
+            )}
+          </motion.div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function AdminPage() {
+  const router = useRouter();
+  const { user, loading, canEdit, isOwner } = useAuth();
+  const [section, setSection] = useState<AdminSection>('dashboard');
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) router.replace('/login');
+  }, [loading, user, router]);
+
+  if (loading) {
+    return (
+      <main className="flex h-screen items-center justify-center bg-bg">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border/10 border-t-accent-blue" />
+      </main>
+    );
+  }
+
+  if (!user) return null;
+
+  if (!canEdit) {
+    return (
+      <main className="min-h-screen bg-bg">
+        <div className="mx-auto max-w-md px-5 py-12">
+          <div className="mb-6 text-center">
+            <p className="text-sm text-text-primary">Your account doesn&apos;t have editor access yet.</p>
+            <p className="mt-2 text-xs text-text-tertiary">
+              Ask an administrator to promote your account to editor. You can still manage your account below.
+            </p>
+          </div>
+          <ProfileForm />
+          <ChangePasswordForm />
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <AdminShell section={section} onSelectSection={setSection}>
+      {section === 'dashboard' && <DashboardOverview />}
+      {section === 'news' && <NewsSection />}
+      {section === 'sources' && <SourcesManager />}
+      {section === 'users' && isOwner && <UserManager />}
+      {section === 'account' && (
+        <div>
+          <h1 className="mb-4 text-lg font-bold text-text-primary">Account</h1>
+          <ProfileForm />
+          <ChangePasswordForm />
         </div>
       )}
-    </main>
+    </AdminShell>
   );
 }

@@ -1,6 +1,7 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AnalysisService } from './analysis.service';
 import { AnalyzeEventDto } from './dto/event.dto';
+import { OllamaClient } from './ollama.client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -10,7 +11,16 @@ import { Roles } from '../auth/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('editor')
 export class AnalysisController {
-  constructor(private readonly analysis: AnalysisService) {}
+  constructor(
+    private readonly analysis: AnalysisService,
+    private readonly ollama: OllamaClient,
+  ) {}
+
+  /** Dashboard health tile — is the local LLM reachable right now. */
+  @Get('ollama-status')
+  ollamaStatus() {
+    return this.ollama.isReachable();
+  }
 
   @Post('draft/:countryId')
   generateDraft(@Param('countryId') countryId: string) {
