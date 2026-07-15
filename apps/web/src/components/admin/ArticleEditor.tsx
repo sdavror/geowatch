@@ -5,6 +5,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL } from '@geowatch/shared-types';
 import { authFetch, uploadImage } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
+import { ResearchPanel } from './ResearchPanel';
 
 const CATEGORIES: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
 
@@ -216,6 +217,8 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
           {analyzingEvent ? 'Analyzing…' : article ? '🔎 Enrich from source data' : '⚡ Analyze event'}
         </button>
       </div>
+
+      <ResearchPanel text={eventText} />
 
       <label className="mb-1 block text-[12px] text-text-secondary">Summary</label>
       <textarea

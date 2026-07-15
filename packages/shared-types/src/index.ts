@@ -75,6 +75,39 @@ export interface MacroScoreEntry {
   components: Record<string, number> | null;
 }
 
+// Research brief — RAW verifiable facts for a journalist to write from,
+// deliberately NOT LLM prose: real indicator values with years, primary
+// sources with clickable URLs, own related coverage. Served by
+// POST /admin/analysis/research.
+export interface ResearchFact {
+  label: string;
+  value: string;
+  period: string; // "actual 2024" | "forecast 2030" | ISO date
+  source: string; // e.g. "World Bank", "IMF WEO"
+}
+
+export interface ResearchLink {
+  title: string;
+  url: string;
+  source: string;
+  date: string | null; // YYYY-MM-DD
+  official: boolean;
+}
+
+export interface CountryResearch {
+  countryId: string;
+  countryName: string;
+  facts: ResearchFact[];
+  statements: ResearchLink[]; // official, with URLs to the originals
+  mediaReports: ResearchLink[]; // grey tier, clearly separated
+  ownCoverage: ResearchLink[]; // our own published articles
+}
+
+export interface ResearchBrief {
+  countries: CountryResearch[];
+  energy: ResearchFact[];
+}
+
 // Structured event-impact report from the local-LLM analysis layer
 // (POST /admin/analysis/event). Every section is periodized: whatHappened
 // is the event itself, impact horizons are explicit (0–3 / 3–12 months)
