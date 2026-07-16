@@ -77,10 +77,15 @@ export class ArticlesService {
     );
   }
 
-  /** Records one view for "most read" ranking. Fire-and-forget from the client. */
-  async recordView(articleId: string, sessionId?: string) {
+  /** Records one view for "most read" ranking + analytics. Fire-and-forget from the client. */
+  async recordView(articleId: string, sessionId?: string, referrer?: string) {
     await this.prisma.pageView.create({
-      data: { entityType: 'article', entityId: articleId, sessionId },
+      data: {
+        entityType: 'article',
+        entityId: articleId,
+        sessionId,
+        referrer: referrer?.trim().toLowerCase().slice(0, 120) || null,
+      },
     });
     return { recorded: true };
   }
@@ -134,11 +139,19 @@ export class ArticlesService {
    * ingestion volume exceeds the page size; everything else sorts newest
    * first, matching how editors actually review those views.
    */
-  async findAllAdmin(filter?: { published?: boolean; status?: ArticleStatus; q?: string }) {
+  async findAllAdmin(filter?: {
+    published?: boolean;
+    status?: ArticleStatus;
+    q?: string;
+    authorId?: string;
+    tag?: string;
+  }) {
     const where: Prisma.ArticleWhereInput = {};
     if (filter?.published !== undefined) where.published = filter.published;
     if (filter?.status) where.status = filter.status;
     if (filter?.q) where.title = { contains: filter.q, mode: 'insensitive' };
+    if (filter?.authorId) where.authorId = filter.authorId;
+    if (filter?.tag) where.tags = { has: filter.tag };
 
     const queueOrder = filter?.status === 'in_review' || filter?.published === false;
     const articles = await this.prisma.article.findMany({
@@ -190,7 +203,7 @@ export class ArticlesService {
     const d30 = new Date(now - 30 * 86400_000);
     const d60 = new Date(now - 60 * 86400_000);
 
-    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d] =
+    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d, unreadMessages] =
       await Promise.all([
         this.statusCounts(),
         this.prisma.article.count(),
@@ -204,6 +217,7 @@ export class ArticlesService {
         }),
         this.prisma.editorialTask.count({ where: { userId, done: false } }),
         this.prisma.comment.count({ where: { createdAt: { gte: d7 } } }),
+        this.prisma.message.count({ where: { toId: userId, readAt: null } }),
       ]);
 
     return {
@@ -215,6 +229,7 @@ export class ArticlesService {
         viewsPrev30d > 0 ? Math.round(((views30d - viewsPrev30d) / viewsPrev30d) * 100) : null,
       openTasks,
       comments7d,
+      unreadMessages,
     };
   }
 
@@ -277,6 +292,7 @@ export class ArticlesService {
     published?: boolean;
     status?: string | null;
     scheduledAt?: string | null;
+    tags?: string[];
     authorId: string;
   }) {
     const status = this.resolveStatus(input, 'draft');
@@ -299,7 +315,7 @@ export class ArticlesService {
         // Manually created articles still need a unique url; synthesise one.
         url: `geowatch://article/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         publishedAt: isLive ? new Date() : null,
-        tags: [],
+        tags: this.sanitizeTags(input.tags),
       },
       include: { country: true },
     });
@@ -319,6 +335,7 @@ export class ArticlesService {
       published?: boolean;
       status?: string | null;
       scheduledAt?: string | null;
+      tags?: string[];
     },
   ) {
     const existing = await this.prisma.article.findUnique({ where: { id } });
@@ -328,6 +345,36 @@ export class ArticlesService {
     const status = statusTouched ? this.resolveStatus(input, existing.status) : existing.status;
     const isLive = status === 'published';
     const goingLive = statusTouched && isLive && !existing.published;
+
+    // History trail: snapshot the pre-edit content when the status changes,
+    // or when content changes and the last snapshot is older than the
+    // collapse window — autosave fires every few seconds, but a revision
+    // every keystroke would make History unreadable.
+    const contentTouched =
+      (input.title !== undefined && input.title !== existing.title) ||
+      (input.body !== undefined && input.body !== existing.body) ||
+      (input.aiSummary !== undefined && input.aiSummary !== existing.aiSummary);
+    const statusChanged = statusTouched && status !== existing.status;
+    if (contentTouched || statusChanged) {
+      const last = await this.prisma.articleRevision.findFirst({
+        where: { articleId: id },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const windowMs = 5 * 60_000;
+      if (statusChanged || !last || Date.now() - last.createdAt.getTime() > windowMs) {
+        await this.prisma.articleRevision.create({
+          data: {
+            articleId: id,
+            title: existing.title,
+            aiSummary: existing.aiSummary,
+            body: existing.body,
+            status: existing.status,
+            authorId: existing.authorId,
+          },
+        });
+      }
+    }
 
     const article = await this.prisma.article.update({
       where: { id },
@@ -340,6 +387,7 @@ export class ArticlesService {
           ? { countryId: input.countryId ? input.countryId.toUpperCase() : null }
           : {}),
         ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        ...(input.tags !== undefined ? { tags: this.sanitizeTags(input.tags) } : {}),
         ...(statusTouched ? { status, published: isLive, aiSummaryApproved: isLive } : {}),
         ...(input.scheduledAt !== undefined
           ? { scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null }
@@ -383,6 +431,107 @@ export class ArticlesService {
     await this.prisma.article.delete({ where: { id } });
     await this.invalidate(id);
     return { deleted: true, id };
+  }
+
+  /**
+   * "Find related stories" in the editor — same country first, then same
+   * category, published only. Deterministic (no LLM): an editor wants links
+   * they can trust instantly.
+   */
+  async findRelatedAdmin(articleId: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { id: articleId },
+      select: { countryId: true, category: true },
+    });
+    if (!article) throw new NotFoundException(`Article "${articleId}" not found`);
+
+    const base = { published: true, id: { not: articleId } } as const;
+    const select = { id: true, title: true, category: true, publishedAt: true } as const;
+    const [byCountry, byCategory] = await Promise.all([
+      article.countryId
+        ? this.prisma.article.findMany({
+            where: { ...base, countryId: article.countryId },
+            orderBy: { publishedAt: 'desc' },
+            take: 4,
+            select,
+          })
+        : Promise.resolve([]),
+      article.category
+        ? this.prisma.article.findMany({
+            where: { ...base, category: article.category },
+            orderBy: { publishedAt: 'desc' },
+            take: 4,
+            select,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const seen = new Set<string>();
+    return [...byCountry, ...byCategory]
+      .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
+      .slice(0, 6)
+      .map((a) => ({
+        id: a.id,
+        title: a.title,
+        category: a.category,
+        publishedAt: a.publishedAt?.toISOString() ?? null,
+      }));
+  }
+
+  async listRevisions(articleId: string) {
+    const revisions = await this.prisma.articleRevision.findMany({
+      where: { articleId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return revisions.map((r) => ({
+      id: r.id,
+      title: r.title,
+      aiSummary: r.aiSummary,
+      body: r.body,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      words: r.body?.trim() ? r.body.trim().split(/\s+/).length : 0,
+    }));
+  }
+
+  /**
+   * Restores a snapshot's content through the normal update path, so the
+   * current state itself gets snapshotted first — restoring is always
+   * undoable. Status is deliberately NOT restored (reverting text shouldn't
+   * silently unpublish a live story).
+   */
+  async restoreRevision(articleId: string, revisionId: string) {
+    const revision = await this.prisma.articleRevision.findFirst({
+      where: { id: revisionId, articleId },
+    });
+    if (!revision) throw new NotFoundException('Revision not found');
+
+    // Snapshot the current state unconditionally — the autosave collapse
+    // window must never swallow this one, or a restore couldn't be undone.
+    const current = await this.prisma.article.findUnique({ where: { id: articleId } });
+    if (!current) throw new NotFoundException(`Article "${articleId}" not found`);
+    await this.prisma.articleRevision.create({
+      data: {
+        articleId,
+        title: current.title,
+        aiSummary: current.aiSummary,
+        body: current.body,
+        status: current.status,
+        authorId: current.authorId,
+      },
+    });
+
+    return this.update(articleId, {
+      title: revision.title,
+      aiSummary: revision.aiSummary,
+      body: revision.body,
+    });
+  }
+
+  private sanitizeTags(tags?: string[]): string[] {
+    if (!tags) return [];
+    return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => t && t.length <= 50))].slice(0, 12);
   }
 
   private async invalidate(id?: string) {

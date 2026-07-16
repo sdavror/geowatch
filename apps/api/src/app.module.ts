@@ -16,6 +16,8 @@ import { IngestionModule } from './ingestion/ingestion.module';
 import { MacroModule } from './macro/macro.module';
 import { AnalysisModule } from './analysis/analysis.module';
 import { TasksModule } from './tasks/tasks.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { MessagesModule } from './messages/messages.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -46,6 +48,8 @@ import { validateEnv } from './config/env.validation';
     MacroModule,
     AnalysisModule,
     TasksModule,
+    AnalyticsModule,
+    MessagesModule,
   ],
   providers: [
     {

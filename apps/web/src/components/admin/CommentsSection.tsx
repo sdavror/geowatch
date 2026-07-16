@@ -38,7 +38,7 @@ export function CommentsSection() {
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold text-text-primary">Comments</h1>
+      <h1 className="mb-4 text-h1 text-text-primary">Comments</h1>
       {error && <p className="mb-3 text-xs text-status-conflict">{error}</p>}
 
       <motion.div

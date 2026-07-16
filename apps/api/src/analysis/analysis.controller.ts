@@ -1,7 +1,27 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AnalysisService } from './analysis.service';
 import { AnalyzeEventDto } from './dto/event.dto';
 import { OllamaClient } from './ollama.client';
+import { AssistService, ASSIST_MODES, type AssistMode } from './assist.service';
+
+class AssistDto {
+  @IsIn(ASSIST_MODES)
+  mode!: AssistMode;
+
+  @IsString()
+  @MaxLength(300)
+  title!: string;
+
+  @IsString()
+  @MaxLength(30000)
+  body!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  selection?: string;
+}
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -14,7 +34,17 @@ export class AnalysisController {
   constructor(
     private readonly analysis: AnalysisService,
     private readonly ollama: OllamaClient,
+    private readonly assistService: AssistService,
   ) {}
+
+  /**
+   * Editor copilot: improve / headline / summary / tags / translate / tone.
+   * Works purely on the article's own text (local LLM, ~10-60s).
+   */
+  @Post('assist')
+  assist(@Body() dto: AssistDto) {
+    return this.assistService.assist(dto);
+  }
 
   /** Dashboard health tile — is the local LLM reachable right now. */
   @Get('ollama-status')

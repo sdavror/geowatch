@@ -8,6 +8,12 @@ class RecordViewDto {
   @IsString()
   @MaxLength(100)
   sessionId?: string;
+
+  // Referring host only (never a full URL) — feeds "Traffic sources".
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  referrer?: string;
 }
 
 @Controller('articles')
@@ -35,6 +41,6 @@ export class ArticlesController {
 
   @Post(':id/view')
   recordView(@Param('id') id: string, @Body() dto: RecordViewDto) {
-    return this.articlesService.recordView(id, dto.sessionId);
+    return this.articlesService.recordView(id, dto.sessionId, dto.referrer);
   }
 }

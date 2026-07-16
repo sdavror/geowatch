@@ -9,6 +9,7 @@ import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { fetcher, mediaUrl } from '@/lib/api';
 import { recordArticleView } from '@/hooks/useArticles';
 import { CommentsSection } from '@/components/articles/CommentsSection';
+import { ArticleBody } from '@/components/article/ArticleBody';
 import { RelatedStories } from '@/components/article/RelatedStories';
 import { ShareBar } from '@/components/article/ShareBar';
 import { Logo } from '@/components/Logo';
@@ -105,8 +106,8 @@ export default function NewsDetailPage() {
             )}
 
             {article.body && (
-              <div className="mt-8 whitespace-pre-wrap font-serif text-[18px] leading-[1.8] text-text-primary">
-                {article.body}
+              <div className="mt-8">
+                <ArticleBody markdown={article.body} />
               </div>
             )}
 

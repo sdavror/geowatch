@@ -294,6 +294,112 @@ export interface DashboardStats {
   viewsChangePct: number | null;
   openTasks: number;
   comments7d: number;
+  unreadMessages: number;
+}
+
+// ─────────────────────────────────────────────
+// Analytics (admin)
+// ─────────────────────────────────────────────
+
+export interface ViewsAnalytics {
+  days: number;
+  total: number;
+  changePct: number | null;
+  daily: Array<{ date: string; views: number }>;
+  topArticles: Array<{
+    id: string;
+    title: string;
+    status: ArticleStatus;
+    category: EventCategory | null;
+    views: number;
+  }>;
+}
+
+export interface AudienceAnalytics {
+  days: number;
+  uniqueVisitors: number;
+  totalViews: number;
+  viewsPerVisitor: number;
+  returningVisitors: number;
+  daily: Array<{ date: string; visitors: number }>;
+}
+
+export interface ReferrerAnalytics {
+  days: number;
+  total: number;
+  sources: Array<{ source: string; views: number; visitors: number; sharePct: number }>;
+}
+
+// ─────────────────────────────────────────────
+// Tools (admin)
+// ─────────────────────────────────────────────
+
+export interface MediaItem {
+  filename: string;
+  url: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  usedBy: { kind: 'article' | 'avatar'; id: string; label: string } | null;
+}
+
+export interface TagStat {
+  tag: string;
+  count: number;
+}
+
+// ─────────────────────────────────────────────
+// Messages (admin)
+// ─────────────────────────────────────────────
+
+export interface MessagePeer {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  role: UserRole;
+  unread: number;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
+}
+
+export interface ThreadMessage {
+  id: string;
+  body: string;
+  mine: boolean;
+  createdAt: string;
+  readAt: string | null;
+}
+
+// ─────────────────────────────────────────────
+// Editor workspace (article editor)
+// ─────────────────────────────────────────────
+
+// Content snapshot in the editor's History panel.
+export interface ArticleRevisionEntry {
+  id: string;
+  title: string;
+  aiSummary: string | null;
+  body: string | null;
+  status: ArticleStatus;
+  createdAt: string;
+  words: number;
+}
+
+export type AssistMode = 'improve' | 'headline' | 'summary' | 'tags' | 'translate' | 'tone';
+
+// POST /admin/analysis/assist — editor copilot result.
+export interface AssistResult {
+  mode: AssistMode;
+  result: string;
+  // headline/tags modes return multiple options to pick from.
+  variants?: string[];
+}
+
+// GET /admin/articles/:id/related — deterministic related-stories lookup.
+export interface RelatedStory {
+  id: string;
+  title: string;
+  category: EventCategory | null;
+  publishedAt: string | null;
 }
 
 // One story on the publication calendar (month view).

@@ -9,7 +9,7 @@ import { useAuth, authFetch } from '@/lib/auth';
 import { AdminShell, type AdminSection } from '@/components/admin/AdminShell';
 import { DashboardOverview } from '@/components/admin/DashboardOverview';
 import { SourcesManager } from '@/components/admin/SourcesManager';
-import { ArticleEditor } from '@/components/admin/ArticleEditor';
+import { EditorWorkspace } from '@/components/admin/EditorWorkspace';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
@@ -17,15 +17,22 @@ import { KanbanBoard } from '@/components/admin/KanbanBoard';
 import { CalendarGrid } from '@/components/admin/CalendarGrid';
 import { TaskList } from '@/components/admin/TaskList';
 import { CommentsSection } from '@/components/admin/CommentsSection';
+import { MessagesSection } from '@/components/admin/MessagesSection';
+import { ViewsSection, AudienceSection, TrafficSection } from '@/components/admin/AnalyticsSections';
+import { MediaLibrary } from '@/components/admin/MediaLibrary';
+import { TagsManager } from '@/components/admin/TagsManager';
+import { TemplatesSection, type StoryTemplate } from '@/components/admin/TemplatesSection';
+import { HelpSection } from '@/components/admin/HelpSection';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { mediaUrl } from '@/lib/api';
 
-type StatusFilter = 'all' | ArticleStatus;
+// What an articles view shows: everything, only mine, or one workflow stage.
+type ArticlesPreset = 'all' | 'mine' | ArticleStatus;
 
-// Tab order mirrors the editorial flow; the review queue leads because
-// that's what an editor opening this page needs to see first.
-const STATUS_FILTERS: StatusFilter[] = [
+// Tab order on the All-articles view mirrors the editorial flow; the review
+// queue leads because that's what an editor opening it needs to see first.
+const ALL_VIEW_TABS: Array<'all' | ArticleStatus> = [
   'in_review',
   'all',
   'idea',
@@ -45,22 +52,39 @@ function wordCount(text: string | null | undefined): number {
 }
 
 interface ArticlesSectionProps {
-  editing: Article | null | 'new';
+  /** Locked view (sidebar status pages / My articles) or 'all' with tabs. */
+  preset: ArticlesPreset;
+  title: string;
+  // Opening a story (or 'new') switches the page into the full-screen
+  // editor workspace — the list itself never hosts an inline form anymore.
   setEditing: (e: Article | null | 'new') => void;
   searchQuery: string;
+  tagFilter: string;
+  onClearTag: () => void;
 }
 
-function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionProps) {
+function ArticlesSection({
+  preset,
+  title,
+  setEditing,
+  searchQuery,
+  tagFilter,
+  onClearTag,
+}: ArticlesSectionProps) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [counts, setCounts] = useState<{ total: number; byStatus: Record<string, number> } | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<StatusFilter>('in_review');
+  const [tab, setTab] = useState<'all' | ArticleStatus>('in_review');
 
-  const loadArticles = useCallback(async (f: StatusFilter, q: string) => {
+  const effective: ArticlesPreset = preset === 'all' ? tab : preset;
+
+  const loadArticles = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (f !== 'all') params.set('status', f);
-      if (q) params.set('q', q);
+      if (effective === 'mine') params.set('mine', 'true');
+      else if (effective !== 'all') params.set('status', effective);
+      if (searchQuery) params.set('q', searchQuery);
+      if (tagFilter) params.set('tag', tagFilter);
       const qs = params.toString() ? `?${params.toString()}` : '';
       const [list, c] = await Promise.all([
         authFetch<Article[]>(`/admin/articles${qs}`),
@@ -72,23 +96,23 @@ function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionPr
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Failed to load');
     }
-  }, []);
+  }, [effective, searchQuery, tagFilter]);
 
-  // A search from the header shows matches across every stage — switching
-  // to "all" avoids the confusing "searched but the queue tab hid it" case.
+  // A search or tag jump shows matches across every stage — switching the
+  // All view to its "all" tab avoids "searched but the queue tab hid it".
   useEffect(() => {
-    if (searchQuery) setFilter('all');
-  }, [searchQuery]);
+    if (preset === 'all' && (searchQuery || tagFilter)) setTab('all');
+  }, [preset, searchQuery, tagFilter]);
 
   useEffect(() => {
-    void loadArticles(filter, searchQuery);
-  }, [filter, searchQuery, loadArticles]);
+    void loadArticles();
+  }, [loadArticles]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this story permanently?')) return;
     try {
       await authFetch(`/admin/articles/${id}`, { method: 'DELETE' });
-      await loadArticles(filter, searchQuery);
+      await loadArticles();
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Delete failed');
     }
@@ -100,74 +124,69 @@ function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionPr
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
-      await loadArticles(filter, searchQuery);
+      await loadArticles();
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Update failed');
     }
   };
 
-  const filterLabel = (f: StatusFilter) =>
-    f === 'all' ? 'All' : f === 'in_review' ? 'In review' : ARTICLE_STATUS_LABEL[f];
-  const filterCount = (f: StatusFilter) =>
+  const tabLabel = (f: 'all' | ArticleStatus) => (f === 'all' ? 'All' : ARTICLE_STATUS_LABEL[f]);
+  const tabCount = (f: 'all' | ArticleStatus) =>
     counts ? (f === 'all' ? counts.total : (counts.byStatus?.[f] ?? 0)) : null;
 
   return (
     <div>
-      <div className="mb-5 flex items-center gap-1.5">
-        <h1 className="mr-2 text-lg font-bold text-text-primary">Articles</h1>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <h1 className="mr-2 text-h1 text-text-primary">{title}</h1>
         {searchQuery && (
-          <span className="rounded-full bg-bg-3 px-2.5 py-1 text-[11px] text-text-secondary">
+          <span className="rounded-full bg-bg-3 px-2.5 py-1 text-caption text-text-secondary">
             search: “{searchQuery}”
           </span>
         )}
-        {!editing && (
+        {tagFilter && (
           <button
-            onClick={() => setEditing('new')}
-            className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-xs font-medium text-brand-text hover:opacity-90"
+            onClick={onClearTag}
+            className="rounded-full bg-brand-bg px-2.5 py-1 text-caption text-brand-text hover:opacity-80"
+            title="Clear tag filter"
           >
-            + New story
+            #{tagFilter} ✕
           </button>
         )}
+        <button
+          onClick={() => setEditing('new')}
+          className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-caption font-medium text-brand-text hover:opacity-90"
+        >
+          + New story
+        </button>
       </div>
 
-      {editing && (
-        <div className="mb-6">
-          <ArticleEditor
-            article={editing === 'new' ? null : editing}
-            onSaved={() => {
-              setEditing(null);
-              void loadArticles(filter, searchQuery);
-            }}
-            onCancel={() => setEditing(null)}
-          />
-        </div>
-      )}
-
-      {!editing && (
+      {(
         <>
-          <div className="mb-4 flex flex-wrap items-center gap-1.5">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`relative rounded-full px-3 py-1 text-[12px] transition-colors ${
-                  filter === f ? 'font-medium text-brand-text' : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
-                }`}
-              >
-                {filter === f && (
-                  <motion.span
-                    layoutId="admin-filter-pill"
-                    className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
-                    transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                  />
-                )}
-                {filterLabel(f)} {filterCount(f) ?? ''}
-              </button>
-            ))}
-          </div>
-          {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
+          {preset === 'all' && (
+            <div className="mb-4 flex flex-wrap items-center gap-1.5">
+              {ALL_VIEW_TABS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setTab(f)}
+                  className={`relative rounded-full px-3 py-1 text-caption transition-colors ${
+                    tab === f ? 'font-medium text-brand-text' : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
+                  }`}
+                >
+                  {tab === f && (
+                    <motion.span
+                      layoutId="admin-filter-pill"
+                      className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
+                      transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+                    />
+                  )}
+                  {tabLabel(f)} {tabCount(f) ?? ''}
+                </button>
+              ))}
+            </div>
+          )}
+          {listError && <p className="mb-3 text-caption text-status-conflict">{listError}</p>}
           <motion.div
-            key={`${filter}:${searchQuery}`}
+            key={`${effective}:${searchQuery}:${tagFilter}`}
             initial="hidden"
             animate="visible"
             variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
@@ -196,11 +215,11 @@ function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionPr
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-[14px] text-text-primary">{a.title}</span>
+                      <span className="truncate text-body2 text-text-primary">{a.title}</span>
                       {a.status && <StatusBadge status={a.status} className="flex-shrink-0" />}
                     </div>
                     {snippet && (
-                      <div className="mt-0.5 truncate text-[12px] text-text-tertiary">{snippet}</div>
+                      <div className="mt-0.5 truncate text-caption text-text-tertiary">{snippet}</div>
                     )}
                     <div className="mt-1 flex items-center gap-2 text-[11px]">
                       {a.category && (
@@ -258,13 +277,13 @@ function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionPr
               );
             })}
             {articles.length === 0 && !listError && (
-              <p className="py-8 text-center text-xs text-text-tertiary">
-                {searchQuery
-                  ? 'No stories match your search.'
-                  : filter === 'in_review'
+              <p className="py-8 text-center text-caption text-text-tertiary">
+                {searchQuery || tagFilter
+                  ? 'No stories match this filter.'
+                  : effective === 'in_review'
                     ? 'No stories awaiting review — the queue is clear.'
-                    : filter === 'published'
-                      ? 'Nothing published yet.'
+                    : effective === 'mine'
+                      ? 'You haven’t written any stories yet — hit + Create.'
                       : 'Nothing here yet.'}
               </p>
             )}
@@ -275,17 +294,36 @@ function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionPr
   );
 }
 
+// Sidebar status pages → their ArticlesSection preset + page title.
+const ARTICLE_VIEWS: Partial<Record<AdminSection, { preset: ArticlesPreset; title: string }>> = {
+  articles: { preset: 'all', title: 'All articles' },
+  'my-articles': { preset: 'mine', title: 'My articles' },
+  drafts: { preset: 'draft', title: 'Drafts' },
+  'in-review': { preset: 'in_review', title: 'In review' },
+  scheduled: { preset: 'scheduled', title: 'Scheduled' },
+  published: { preset: 'published', title: 'Published' },
+  archive: { preset: 'archived', title: 'Archive' },
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const { user, loading, canEdit, isOwner } = useAuth();
   const [section, setSection] = useState<AdminSection>('dashboard');
   // Editing state lives here (not in ArticlesSection) so the header Create
-  // button, dashboard cards, kanban cards and calendar entries can all open
-  // the editor from anywhere in the workspace.
+  // button, dashboard cards, kanban cards, calendar entries, analytics rows
+  // and templates can all open the editor from anywhere in the workspace.
   const [editing, setEditing] = useState<Article | null | 'new'>(null);
+  const [editorInitial, setEditorInitial] = useState<{
+    title?: string;
+    aiSummary?: string;
+    body?: string;
+    category?: EventCategory;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
 
   const openArticle = useCallback((article: Article) => {
+    setEditorInitial(null);
     setEditing(article);
     setSection('articles');
   }, []);
@@ -293,23 +331,39 @@ export default function AdminPage() {
   const openArticleById = useCallback(async (id: string) => {
     try {
       const article = await authFetch<Article>(`/articles/${id}`);
+      setEditorInitial(null);
       setEditing(article);
       setSection('articles');
     } catch {
-      // Ignore — the story may have been deleted since the calendar loaded.
+      // Ignore — the story may have been deleted since the list loaded.
     }
   }, []);
 
   const startCreate = useCallback(() => {
+    setEditorInitial(null);
     setEditing('new');
+    setSection('articles');
+  }, []);
+
+  const useTemplate = useCallback((t: StoryTemplate) => {
+    setEditorInitial({ title: t.title, aiSummary: t.summary, body: t.body, category: t.category });
+    setEditing('new');
+    setSection('articles');
+  }, []);
+
+  const browseTag = useCallback((tag: string) => {
+    setTagFilter(tag);
+    setSearchQuery('');
+    setEditing(null);
     setSection('articles');
   }, []);
 
   const selectSection = useCallback((s: AdminSection) => {
     setSection(s);
+    setEditing(null);
     if (s !== 'articles') {
-      setEditing(null);
       setSearchQuery('');
+      setTagFilter('');
     }
   }, []);
 
@@ -345,6 +399,28 @@ export default function AdminPage() {
     );
   }
 
+  const articleView = ARTICLE_VIEWS[section];
+
+  // The editor takes over the whole main column (its own top bar replaces
+  // the greeting header) — the sidebar stays for orientation.
+  if (editing !== null) {
+    return (
+      <AdminShell
+        section={section}
+        onSelectSection={selectSection}
+        onCreate={startCreate}
+        onSearch={setSearchQuery}
+        chrome="bare"
+      >
+        <EditorWorkspace
+          article={editing === 'new' ? null : editing}
+          initial={editing === 'new' ? editorInitial : null}
+          onClose={() => setEditing(null)}
+        />
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell
       section={section}
@@ -360,13 +436,21 @@ export default function AdminPage() {
           onGotoTasks={() => selectSection('tasks')}
         />
       )}
-      {section === 'articles' && (
-        <ArticlesSection editing={editing} setEditing={setEditing} searchQuery={searchQuery} />
+      {articleView && (
+        <ArticlesSection
+          key={section}
+          preset={articleView.preset}
+          title={articleView.title}
+          setEditing={setEditing}
+          searchQuery={section === 'articles' ? searchQuery : ''}
+          tagFilter={section === 'articles' ? tagFilter : ''}
+          onClearTag={() => setTagFilter('')}
+        />
       )}
       {section === 'kanban' && <KanbanBoard onOpenArticle={openArticle} />}
       {section === 'calendar' && (
         <div className="max-w-2xl">
-          <h1 className="mb-4 text-lg font-bold text-text-primary">Publication calendar</h1>
+          <h1 className="mb-4 text-h1 text-text-primary">Publication calendar</h1>
           <div className="rounded-2xl border border-border/10 bg-bg-2 p-5">
             <CalendarGrid onOpenArticle={openArticleById} />
           </div>
@@ -374,20 +458,28 @@ export default function AdminPage() {
       )}
       {section === 'tasks' && (
         <div className="max-w-2xl">
-          <h1 className="mb-4 text-lg font-bold text-text-primary">Tasks</h1>
+          <h1 className="mb-4 text-h1 text-text-primary">Tasks</h1>
           <TaskList />
         </div>
       )}
       {section === 'comments' && <CommentsSection />}
+      {section === 'messages' && <MessagesSection />}
+      {section === 'views' && <ViewsSection onOpenArticleById={openArticleById} />}
+      {section === 'audience' && <AudienceSection />}
+      {section === 'traffic' && <TrafficSection />}
+      {section === 'media' && <MediaLibrary />}
+      {section === 'tags' && <TagsManager onBrowseTag={browseTag} />}
+      {section === 'templates' && <TemplatesSection onUseTemplate={useTemplate} />}
       {section === 'sources' && <SourcesManager />}
       {section === 'users' && isOwner && <UserManager />}
-      {section === 'account' && (
+      {section === 'settings' && (
         <div>
-          <h1 className="mb-4 text-lg font-bold text-text-primary">Account</h1>
+          <h1 className="mb-4 text-h1 text-text-primary">Settings</h1>
           <ProfileForm />
           <ChangePasswordForm />
         </div>
       )}
+      {section === 'help' && <HelpSection />}
     </AdminShell>
   );
 }

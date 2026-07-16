@@ -328,6 +328,7 @@ model Article {
 
   eventLinks ArticleEvent[]
   comments   Comment[]
+  revisions  ArticleRevision[]
 
   @@map("articles")
   @@index([status])
@@ -367,6 +368,8 @@ model User {
   articles      Article[]
   comments      Comment[]
   tasks         EditorialTask[]
+  sentMessages     Message[] @relation("sentMessages")
+  receivedMessages Message[] @relation("receivedMessages")
 
   @@map("users")
 }
@@ -422,9 +425,46 @@ model PageView {
   entityType String   @map("entity_type") @db.VarChar(20)
   entityId   String   @map("entity_id")
   sessionId  String?  @map("session_id")
+  // Referring host ("news.google.com", "t.co", …), null = direct/unknown.
+  // Only the host is stored — full referrer URLs can carry query-string PII.
+  referrer   String?  @db.VarChar(120)
   viewedAt   DateTime @default(now()) @map("viewed_at")
 
   @@map("page_views")
   @@index([entityType, entityId])
   @@index([viewedAt(sort: Desc)])
+}
+
+// Content snapshot for the editor's History panel. Written by the autosave
+// path at most once per collapse window (5 min) plus on every status
+// change, so a long writing session leaves a readable trail, not noise.
+model ArticleRevision {
+  id        String   @id @default(uuid()) @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  title     String
+  aiSummary String?  @map("ai_summary")
+  body      String?
+  status    ArticleStatus
+  authorId  String?  @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("article_revisions")
+  @@index([articleId, createdAt(sort: Desc)])
+}
+
+// Internal editor-to-editor direct messages ("Messages" in the sidebar).
+model Message {
+  id        String    @id @default(uuid()) @db.Uuid
+  fromId    String    @map("from_id") @db.Uuid
+  from      User      @relation("sentMessages", fields: [fromId], references: [id], onDelete: Cascade)
+  toId      String    @map("to_id") @db.Uuid
+  to        User      @relation("receivedMessages", fields: [toId], references: [id], onDelete: Cascade)
+  body      String
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("messages")
+  @@index([toId, readAt])
+  @@index([fromId, toId, createdAt(sort: Desc)])
 }

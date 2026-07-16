@@ -21,10 +21,21 @@ function sessionId(): string {
  * throws into the caller — a dropped view ping shouldn't affect reading.
  */
 export function recordArticleView(articleId: string) {
+  // Only the referring host is sent — full referrer URLs can carry
+  // query-string PII, and "Traffic sources" only needs the domain.
+  let referrer: string | null = null;
+  try {
+    if (document.referrer) {
+      const host = new URL(document.referrer).hostname;
+      if (host && host !== window.location.hostname) referrer = host;
+    }
+  } catch {
+    /* malformed referrer — treat as direct */
+  }
   fetch(`${API_BASE_URL}/articles/${articleId}/view`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId: sessionId() }),
+    body: JSON.stringify({ sessionId: sessionId(), referrer }),
   }).catch(() => {
     /* best-effort analytics only */
   });

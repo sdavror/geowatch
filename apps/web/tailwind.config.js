@@ -22,6 +22,18 @@ module.exports = {
         sans: ['var(--font-inter)', ...defaultTheme.fontFamily.sans],
         serif: ['var(--font-lora)', 'Georgia', ...defaultTheme.fontFamily.serif],
       },
+      // Type scale from the admin design sheet (Inter):
+      // Display 32/40 Bold · H1 24/32 SemiBold · H2 20/28 SemiBold ·
+      // H3 18/24 Medium · Body1 16/24 · Body2 14/20 · Caption 12/16.
+      fontSize: {
+        display: ['32px', { lineHeight: '40px', fontWeight: '700' }],
+        h1: ['24px', { lineHeight: '32px', fontWeight: '600' }],
+        h2: ['20px', { lineHeight: '28px', fontWeight: '600' }],
+        h3: ['18px', { lineHeight: '24px', fontWeight: '500' }],
+        body1: ['16px', { lineHeight: '24px', fontWeight: '400' }],
+        body2: ['14px', { lineHeight: '20px', fontWeight: '400' }],
+        caption: ['12px', { lineHeight: '16px', fontWeight: '400' }],
+      },
       colors: {
         bg: {
           DEFAULT: withOpacity('--color-bg'),

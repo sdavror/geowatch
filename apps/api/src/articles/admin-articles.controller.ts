@@ -32,14 +32,19 @@ export class AdminArticlesController {
 
   @Get()
   list(
+    @CurrentUser() user: TokenPayload,
     @Query('published') published?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('mine') mine?: string,
+    @Query('tag') tag?: string,
   ) {
     return this.articlesService.findAllAdmin({
       published: published === undefined ? undefined : published === 'true',
       status: STATUSES.includes(status ?? '') ? (status as never) : undefined,
       q: q?.trim() || undefined,
+      authorId: mine === 'true' ? user.sub : undefined,
+      tag: tag?.trim() || undefined,
     });
   }
 
@@ -57,6 +62,21 @@ export class AdminArticlesController {
       throw new BadRequestException('year/month out of range');
     }
     return this.articlesService.calendarMonth(y, m);
+  }
+
+  @Get(':id/revisions')
+  revisions(@Param('id') id: string) {
+    return this.articlesService.listRevisions(id);
+  }
+
+  @Post(':id/revisions/:revisionId/restore')
+  restoreRevision(@Param('id') id: string, @Param('revisionId') revisionId: string) {
+    return this.articlesService.restoreRevision(id, revisionId);
+  }
+
+  @Get(':id/related')
+  related(@Param('id') id: string) {
+    return this.articlesService.findRelatedAdmin(id);
   }
 
   @Post()
