@@ -230,8 +230,10 @@ export class IngestionService implements OnModuleInit {
   async purgeStaleDrafts(): Promise<{ purged: number }> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - STALE_DRAFT_RETENTION_DAYS);
+    // Only ingested stories still sitting unreviewed — editor-authored work
+    // (ideas, drafts, ready, scheduled) is never retention-purged.
     const { count } = await this.prisma.article.deleteMany({
-      where: { published: false, createdAt: { lt: cutoff } },
+      where: { status: 'in_review', sourceId: { not: null }, createdAt: { lt: cutoff } },
     });
     if (count > 0) {
       this.logger.log(
@@ -383,6 +385,8 @@ export class IngestionService implements OnModuleInit {
           // is a real brand risk for a site whose whole premise is "without
           // bias". An editor approves (Publish) via the existing admin queue.
           published: false,
+          // The moderation queue on the editorial board = the In review column.
+          status: 'in_review',
           tags: [],
         },
       });

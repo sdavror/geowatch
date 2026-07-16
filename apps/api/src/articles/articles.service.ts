@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ArticleStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { ListArticlesQueryDto } from './dto/list-articles-query.dto';
@@ -128,19 +128,27 @@ export class ArticlesService {
   // shows drafts too (unlike the public feed, which is published-only).
 
   /**
-   * `published` filters the moderation queue. Pending items sort oldest
-   * first (FIFO — a queue, not a feed) so nothing sits unseen forever once
-   * ingestion volume exceeds the page size; published items sort newest
-   * first, matching how editors actually want to review each view.
+   * Admin list, filterable by legacy `published` boolean, workflow `status`,
+   * or a title search. The review queue (in_review) sorts oldest first
+   * (FIFO — a queue, not a feed) so nothing sits unseen forever once
+   * ingestion volume exceeds the page size; everything else sorts newest
+   * first, matching how editors actually review those views.
    */
-  async findAllAdmin(published?: boolean) {
+  async findAllAdmin(filter?: { published?: boolean; status?: ArticleStatus; q?: string }) {
+    const where: Prisma.ArticleWhereInput = {};
+    if (filter?.published !== undefined) where.published = filter.published;
+    if (filter?.status) where.status = filter.status;
+    if (filter?.q) where.title = { contains: filter.q, mode: 'insensitive' };
+
+    const queueOrder = filter?.status === 'in_review' || filter?.published === false;
     const articles = await this.prisma.article.findMany({
-      where: published === undefined ? undefined : { published },
-      orderBy: { createdAt: published === false ? 'asc' : 'desc' },
+      where,
+      orderBy: { createdAt: queueOrder ? 'asc' : 'desc' },
       take: 200,
       include: {
         country: true,
         source: { select: { id: true, name: true, type: true, official: true } },
+        author: { select: { id: true, displayName: true, email: true, avatarUrl: true } },
       },
     });
     return articles.map((a) => this.serializeArticle(a, true));
@@ -148,12 +156,115 @@ export class ArticlesService {
 
   /** Counts for the admin queue tabs — cheap enough to run alongside the list. */
   async countAdmin() {
-    const [pending, published, total] = await Promise.all([
+    const [pending, published, total, byStatus] = await Promise.all([
       this.prisma.article.count({ where: { published: false } }),
       this.prisma.article.count({ where: { published: true } }),
       this.prisma.article.count(),
+      this.statusCounts(),
     ]);
-    return { pending, published, total };
+    return { pending, published, total, byStatus };
+  }
+
+  private async statusCounts(): Promise<Record<ArticleStatus, number>> {
+    const grouped = await this.prisma.article.groupBy({ by: ['status'], _count: { _all: true } });
+    const counts = {
+      idea: 0,
+      draft: 0,
+      in_review: 0,
+      ready: 0,
+      scheduled: 0,
+      published: 0,
+      archived: 0,
+    } as Record<ArticleStatus, number>;
+    for (const g of grouped) counts[g.status] = g._count._all;
+    return counts;
+  }
+
+  /**
+   * Dashboard header numbers in one call. Views compare the trailing 30 days
+   * to the 30 before that; null change when there's no baseline yet.
+   */
+  async dashboardStats(userId: string) {
+    const now = Date.now();
+    const d7 = new Date(now - 7 * 86400_000);
+    const d30 = new Date(now - 30 * 86400_000);
+    const d60 = new Date(now - 60 * 86400_000);
+
+    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d] =
+      await Promise.all([
+        this.statusCounts(),
+        this.prisma.article.count(),
+        this.prisma.article.count({ where: { published: true, publishedAt: { gte: d7 } } }),
+        this.prisma.article.count({
+          where: { status: { in: ['idea', 'draft'] }, createdAt: { gte: d7 } },
+        }),
+        this.prisma.pageView.count({ where: { entityType: 'article', viewedAt: { gte: d30 } } }),
+        this.prisma.pageView.count({
+          where: { entityType: 'article', viewedAt: { gte: d60, lt: d30 } },
+        }),
+        this.prisma.editorialTask.count({ where: { userId, done: false } }),
+        this.prisma.comment.count({ where: { createdAt: { gte: d7 } } }),
+      ]);
+
+    return {
+      statusCounts,
+      totalArticles,
+      weeklyNew: { published: weeklyPublished, drafts: weeklyDrafts },
+      views30d,
+      viewsChangePct:
+        viewsPrev30d > 0 ? Math.round(((views30d - viewsPrev30d) / viewsPrev30d) * 100) : null,
+      openTasks,
+      comments7d,
+    };
+  }
+
+  /**
+   * Stories for one calendar month. A story sits on the day it went (or is
+   * planned to go) public: publishedAt → scheduledAt → createdAt fallback.
+   * Fetched per-bucket in SQL rather than scanning all articles in Node.
+   */
+  async calendarMonth(year: number, month: number) {
+    const from = new Date(Date.UTC(year, month - 1, 1));
+    const to = new Date(Date.UTC(year, month, 1));
+    const select = { id: true, title: true, status: true } as const;
+
+    const [published, scheduled, working] = await Promise.all([
+      this.prisma.article.findMany({
+        where: { status: 'published', publishedAt: { gte: from, lt: to } },
+        select: { ...select, publishedAt: true },
+        take: 500,
+      }),
+      this.prisma.article.findMany({
+        where: { status: 'scheduled', scheduledAt: { gte: from, lt: to } },
+        select: { ...select, scheduledAt: true },
+        take: 500,
+      }),
+      this.prisma.article.findMany({
+        where: {
+          status: { in: ['idea', 'draft', 'in_review', 'ready'] },
+          createdAt: { gte: from, lt: to },
+        },
+        select: { ...select, createdAt: true },
+        take: 500,
+      }),
+    ]);
+
+    return [
+      ...published.map((a) => ({ id: a.id, title: a.title, status: a.status, date: a.publishedAt!.toISOString() })),
+      ...scheduled.map((a) => ({ id: a.id, title: a.title, status: a.status, date: a.scheduledAt!.toISOString() })),
+      ...working.map((a) => ({ id: a.id, title: a.title, status: a.status, date: a.createdAt.toISOString() })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
+   * `status` is the workflow source of truth; the legacy `published` boolean
+   * is derived from it (and still accepted from older callers, mapped to
+   * published/draft). Publishing stamps publishedAt once.
+   */
+  private resolveStatus(input: { status?: string | null; published?: boolean }, fallback: ArticleStatus): ArticleStatus {
+    if (input.status && input.status in ArticleStatus) return input.status as ArticleStatus;
+    if (input.published !== undefined) return input.published ? 'published' : 'draft';
+    return fallback;
   }
 
   async create(input: {
@@ -164,8 +275,12 @@ export class ArticlesService {
     countryId?: string | null;
     imageUrl?: string | null;
     published?: boolean;
+    status?: string | null;
+    scheduledAt?: string | null;
     authorId: string;
   }) {
+    const status = this.resolveStatus(input, 'draft');
+    const isLive = status === 'published';
     const article = await this.prisma.article.create({
       data: {
         title: input.title,
@@ -174,14 +289,16 @@ export class ArticlesService {
         category: (input.category as never) ?? null,
         countryId: input.countryId ? input.countryId.toUpperCase() : null,
         imageUrl: input.imageUrl ?? null,
-        published: input.published ?? false,
+        status,
+        published: isLive,
+        scheduledAt: status === 'scheduled' && input.scheduledAt ? new Date(input.scheduledAt) : null,
         authorId: input.authorId,
         // Editor-authored posts are inherently curated, so the AI-summary
         // approval flag rides along with the publish state.
-        aiSummaryApproved: input.published ?? false,
+        aiSummaryApproved: isLive,
         // Manually created articles still need a unique url; synthesise one.
         url: `geowatch://article/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        publishedAt: input.published ? new Date() : null,
+        publishedAt: isLive ? new Date() : null,
         tags: [],
       },
       include: { country: true },
@@ -200,12 +317,18 @@ export class ArticlesService {
       countryId?: string | null;
       imageUrl?: string | null;
       published?: boolean;
+      status?: string | null;
+      scheduledAt?: string | null;
     },
   ) {
     const existing = await this.prisma.article.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Article "${id}" not found`);
 
-    const goingLive = input.published === true && !existing.published;
+    const statusTouched = input.status !== undefined || input.published !== undefined;
+    const status = statusTouched ? this.resolveStatus(input, existing.status) : existing.status;
+    const isLive = status === 'published';
+    const goingLive = statusTouched && isLive && !existing.published;
+
     const article = await this.prisma.article.update({
       where: { id },
       data: {
@@ -217,8 +340,9 @@ export class ArticlesService {
           ? { countryId: input.countryId ? input.countryId.toUpperCase() : null }
           : {}),
         ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
-        ...(input.published !== undefined
-          ? { published: input.published, aiSummaryApproved: input.published }
+        ...(statusTouched ? { status, published: isLive, aiSummaryApproved: isLive } : {}),
+        ...(input.scheduledAt !== undefined
+          ? { scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null }
           : {}),
         ...(goingLive && !existing.publishedAt ? { publishedAt: new Date() } : {}),
       },
@@ -226,6 +350,31 @@ export class ArticlesService {
     });
     await this.invalidate(id);
     return this.serializeArticle(article, true);
+  }
+
+  /**
+   * Auto-publisher for scheduled stories — flips them live once their
+   * scheduledAt passes. Runs every minute; the query is a no-op when
+   * nothing is due.
+   */
+  async publishDueScheduled() {
+    const due = await this.prisma.article.findMany({
+      where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
+      select: { id: true, publishedAt: true },
+    });
+    for (const a of due) {
+      await this.prisma.article.update({
+        where: { id: a.id },
+        data: {
+          status: 'published',
+          published: true,
+          aiSummaryApproved: true,
+          ...(a.publishedAt ? {} : { publishedAt: new Date() }),
+        },
+      });
+    }
+    if (due.length > 0) await this.invalidate();
+    return due.length;
   }
 
   async remove(id: string) {
@@ -284,7 +433,11 @@ export class ArticlesService {
       sentimentScore: Prisma.Decimal | null;
       imageUrl?: string | null;
       published?: boolean;
+      status?: ArticleStatus;
+      scheduledAt?: Date | null;
+      createdAt?: Date;
       source?: { id: string; name: string; type: string | null; official: boolean } | null;
+      author?: { id: string; displayName: string | null; email: string; avatarUrl: string | null } | null;
     },
     includeBody = false,
   ) {
@@ -309,9 +462,19 @@ export class ArticlesService {
       sentimentScore: a.sentimentScore ? Number(a.sentimentScore) : null,
       imageUrl: a.imageUrl ?? null,
       published: a.published ?? false,
+      status: a.status ?? undefined,
+      scheduledAt: a.scheduledAt?.toISOString() ?? null,
+      createdAt: a.createdAt?.toISOString() ?? undefined,
       // Only present when the caller's query included the relation (admin
       // list) — public-facing queries don't fetch it, so this stays undefined.
       source: a.source ?? undefined,
+      author: a.author
+        ? {
+            id: a.author.id,
+            name: a.author.displayName?.trim() || a.author.email.split('@')[0],
+            avatarUrl: a.author.avatarUrl ?? null,
+          }
+        : undefined,
     };
   }
 }

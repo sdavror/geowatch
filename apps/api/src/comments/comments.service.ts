@@ -32,6 +32,33 @@ export class CommentsService {
     return this.serialize(comment);
   }
 
+  /**
+   * Moderation feed: latest comments site-wide with just enough article
+   * context to judge each one. Editors reach it from the admin panel.
+   */
+  async listRecent(limit = 100) {
+    const comments = await this.prisma.comment.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 200),
+      include: {
+        user: { select: { id: true, displayName: true, email: true, avatarUrl: true } },
+        article: { select: { id: true, title: true } },
+      },
+    });
+    return comments.map((c) => ({
+      ...this.serialize(c),
+      article: { id: c.article.id, title: c.article.title },
+    }));
+  }
+
+  /** Editors moderate the public comment feed — role-guarded at the route. */
+  async removeAsModerator(commentId: string) {
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comment not found');
+    await this.prisma.comment.delete({ where: { id: commentId } });
+    return { deleted: true, id: commentId };
+  }
+
   /** Author can delete their own comment; superadmin can delete any. */
   async remove(commentId: string, userId: string, role: string) {
     const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
