@@ -294,6 +294,79 @@ export interface DashboardStats {
   viewsChangePct: number | null;
   openTasks: number;
   comments7d: number;
+  unreadMessages: number;
+}
+
+// ─────────────────────────────────────────────
+// Analytics (admin)
+// ─────────────────────────────────────────────
+
+export interface ViewsAnalytics {
+  days: number;
+  total: number;
+  changePct: number | null;
+  daily: Array<{ date: string; views: number }>;
+  topArticles: Array<{
+    id: string;
+    title: string;
+    status: ArticleStatus;
+    category: EventCategory | null;
+    views: number;
+  }>;
+}
+
+export interface AudienceAnalytics {
+  days: number;
+  uniqueVisitors: number;
+  totalViews: number;
+  viewsPerVisitor: number;
+  returningVisitors: number;
+  daily: Array<{ date: string; visitors: number }>;
+}
+
+export interface ReferrerAnalytics {
+  days: number;
+  total: number;
+  sources: Array<{ source: string; views: number; visitors: number; sharePct: number }>;
+}
+
+// ─────────────────────────────────────────────
+// Tools (admin)
+// ─────────────────────────────────────────────
+
+export interface MediaItem {
+  filename: string;
+  url: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  usedBy: { kind: 'article' | 'avatar'; id: string; label: string } | null;
+}
+
+export interface TagStat {
+  tag: string;
+  count: number;
+}
+
+// ─────────────────────────────────────────────
+// Messages (admin)
+// ─────────────────────────────────────────────
+
+export interface MessagePeer {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  role: UserRole;
+  unread: number;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
+}
+
+export interface ThreadMessage {
+  id: string;
+  body: string;
+  mine: boolean;
+  createdAt: string;
+  readAt: string | null;
 }
 
 // One story on the publication calendar (month view).

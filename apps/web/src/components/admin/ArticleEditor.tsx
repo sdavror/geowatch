@@ -20,18 +20,21 @@ function toLocalInputValue(iso: string | null | undefined): string {
 
 interface ArticleEditorProps {
   article: Article | null; // null = create new
+  /** Pre-fill for a brand-new story (templates). Ignored when editing. */
+  initial?: { title?: string; aiSummary?: string; body?: string; category?: EventCategory } | null;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps) {
-  const [title, setTitle] = useState(article?.title ?? '');
+export function ArticleEditor({ article, initial, onSaved, onCancel }: ArticleEditorProps) {
+  const [title, setTitle] = useState(article?.title ?? initial?.title ?? '');
   const [category, setCategory] = useState<EventCategory>(
-    (article?.category as EventCategory) ?? 'military',
+    (article?.category as EventCategory) ?? initial?.category ?? 'military',
   );
   const [countryId, setCountryId] = useState(article?.countryId ?? '');
-  const [aiSummary, setSummary] = useState(article?.aiSummary ?? '');
-  const [body, setBody] = useState(article?.body ?? '');
+  const [aiSummary, setSummary] = useState(article?.aiSummary ?? initial?.aiSummary ?? '');
+  const [body, setBody] = useState(article?.body ?? initial?.body ?? '');
+  const [tags, setTags] = useState((article?.tags ?? []).join(', '));
   const [imageUrl, setImageUrl] = useState<string | null>(article?.imageUrl ?? null);
   const [status, setStatus] = useState<ArticleStatus>(
     article?.status ?? (article?.published ? 'published' : 'draft'),
@@ -128,6 +131,11 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
       aiSummary: aiSummary.trim() || null,
       body: body.trim() || null,
       imageUrl,
+      tags: tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 12),
       status: finalStatus,
       scheduledAt:
         finalStatus === 'scheduled' && scheduledAt ? new Date(scheduledAt).toISOString() : null,
@@ -253,6 +261,14 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
         onChange={(e) => setBody(e.target.value)}
         rows={6}
         className="mb-3 w-full resize-y rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
+      />
+
+      <label className="mb-1 block text-[12px] text-text-secondary">Tags (comma-separated)</label>
+      <input
+        value={tags}
+        onChange={(e) => setTags(e.target.value)}
+        placeholder="sanctions, energy, black sea"
+        className="mb-3 w-full rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
       />
 
       <label className="mb-1 block text-[12px] text-text-secondary">Photo</label>

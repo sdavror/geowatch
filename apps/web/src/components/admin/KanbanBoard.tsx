@@ -69,7 +69,7 @@ export function KanbanBoard({ onOpenArticle }: KanbanBoardProps) {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-bold text-text-primary">Kanban: editorial process</h1>
+        <h1 className="text-h1 text-text-primary">Kanban: editorial process</h1>
         <span className="text-[11px] text-text-tertiary">Drag a card between columns, or use ‹ ›</span>
       </div>
       {error && <p className="mb-3 text-xs text-status-conflict">{error}</p>}

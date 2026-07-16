@@ -32,14 +32,19 @@ export class AdminArticlesController {
 
   @Get()
   list(
+    @CurrentUser() user: TokenPayload,
     @Query('published') published?: string,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('mine') mine?: string,
+    @Query('tag') tag?: string,
   ) {
     return this.articlesService.findAllAdmin({
       published: published === undefined ? undefined : published === 'true',
       status: STATUSES.includes(status ?? '') ? (status as never) : undefined,
       q: q?.trim() || undefined,
+      authorId: mine === 'true' ? user.sub : undefined,
+      tag: tag?.trim() || undefined,
     });
   }
 

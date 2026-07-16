@@ -77,10 +77,15 @@ export class ArticlesService {
     );
   }
 
-  /** Records one view for "most read" ranking. Fire-and-forget from the client. */
-  async recordView(articleId: string, sessionId?: string) {
+  /** Records one view for "most read" ranking + analytics. Fire-and-forget from the client. */
+  async recordView(articleId: string, sessionId?: string, referrer?: string) {
     await this.prisma.pageView.create({
-      data: { entityType: 'article', entityId: articleId, sessionId },
+      data: {
+        entityType: 'article',
+        entityId: articleId,
+        sessionId,
+        referrer: referrer?.trim().toLowerCase().slice(0, 120) || null,
+      },
     });
     return { recorded: true };
   }
@@ -134,11 +139,19 @@ export class ArticlesService {
    * ingestion volume exceeds the page size; everything else sorts newest
    * first, matching how editors actually review those views.
    */
-  async findAllAdmin(filter?: { published?: boolean; status?: ArticleStatus; q?: string }) {
+  async findAllAdmin(filter?: {
+    published?: boolean;
+    status?: ArticleStatus;
+    q?: string;
+    authorId?: string;
+    tag?: string;
+  }) {
     const where: Prisma.ArticleWhereInput = {};
     if (filter?.published !== undefined) where.published = filter.published;
     if (filter?.status) where.status = filter.status;
     if (filter?.q) where.title = { contains: filter.q, mode: 'insensitive' };
+    if (filter?.authorId) where.authorId = filter.authorId;
+    if (filter?.tag) where.tags = { has: filter.tag };
 
     const queueOrder = filter?.status === 'in_review' || filter?.published === false;
     const articles = await this.prisma.article.findMany({
@@ -190,7 +203,7 @@ export class ArticlesService {
     const d30 = new Date(now - 30 * 86400_000);
     const d60 = new Date(now - 60 * 86400_000);
 
-    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d] =
+    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d, unreadMessages] =
       await Promise.all([
         this.statusCounts(),
         this.prisma.article.count(),
@@ -204,6 +217,7 @@ export class ArticlesService {
         }),
         this.prisma.editorialTask.count({ where: { userId, done: false } }),
         this.prisma.comment.count({ where: { createdAt: { gte: d7 } } }),
+        this.prisma.message.count({ where: { toId: userId, readAt: null } }),
       ]);
 
     return {
@@ -215,6 +229,7 @@ export class ArticlesService {
         viewsPrev30d > 0 ? Math.round(((views30d - viewsPrev30d) / viewsPrev30d) * 100) : null,
       openTasks,
       comments7d,
+      unreadMessages,
     };
   }
 
@@ -277,6 +292,7 @@ export class ArticlesService {
     published?: boolean;
     status?: string | null;
     scheduledAt?: string | null;
+    tags?: string[];
     authorId: string;
   }) {
     const status = this.resolveStatus(input, 'draft');
@@ -299,7 +315,7 @@ export class ArticlesService {
         // Manually created articles still need a unique url; synthesise one.
         url: `geowatch://article/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         publishedAt: isLive ? new Date() : null,
-        tags: [],
+        tags: this.sanitizeTags(input.tags),
       },
       include: { country: true },
     });
@@ -319,6 +335,7 @@ export class ArticlesService {
       published?: boolean;
       status?: string | null;
       scheduledAt?: string | null;
+      tags?: string[];
     },
   ) {
     const existing = await this.prisma.article.findUnique({ where: { id } });
@@ -340,6 +357,7 @@ export class ArticlesService {
           ? { countryId: input.countryId ? input.countryId.toUpperCase() : null }
           : {}),
         ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        ...(input.tags !== undefined ? { tags: this.sanitizeTags(input.tags) } : {}),
         ...(statusTouched ? { status, published: isLive, aiSummaryApproved: isLive } : {}),
         ...(input.scheduledAt !== undefined
           ? { scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null }
@@ -383,6 +401,11 @@ export class ArticlesService {
     await this.prisma.article.delete({ where: { id } });
     await this.invalidate(id);
     return { deleted: true, id };
+  }
+
+  private sanitizeTags(tags?: string[]): string[] {
+    if (!tags) return [];
+    return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => t && t.length <= 50))].slice(0, 12);
   }
 
   private async invalidate(id?: string) {

@@ -50,6 +50,10 @@ export class CreateArticleDto {
   @IsOptional()
   @IsDateString()
   scheduledAt?: string;
+
+  @IsOptional()
+  @IsArray()
+  tags?: string[];
 }
 
 export class UpdateArticleDto {

@@ -9,15 +9,36 @@ import { useAuth, authFetch } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
 
 export type AdminSection =
+  // Main — mirrors the design's ГОЛОВНЕ block
   | 'dashboard'
-  | 'articles'
-  | 'kanban'
-  | 'calendar'
+  | 'articles' // "All articles" — reached via search / cross-navigation, not the sidebar
+  | 'my-articles'
+  | 'drafts'
+  | 'in-review'
+  | 'scheduled'
+  | 'published'
+  | 'archive'
+  // Planning
   | 'tasks'
+  | 'calendar'
+  | 'kanban'
+  // Communication
   | 'comments'
+  | 'messages'
+  // Analytics
+  | 'views'
+  | 'audience'
+  | 'traffic'
+  // Tools
+  | 'media'
+  | 'tags'
+  | 'templates'
+  // System (Apolitics-specific, preserved features)
   | 'sources'
   | 'users'
-  | 'account';
+  // Bottom block
+  | 'settings'
+  | 'help';
 
 interface NavItem {
   key: AdminSection;
@@ -27,36 +48,65 @@ interface NavItem {
   badge?: (stats: DashboardStats) => number;
 }
 
-// Grouped like the MediaLine design: workspace / planning / community /
-// system. Badges surface "needs attention" counts, not vanity totals.
+// Sidebar structure is a 1:1 mapping of the design sheet: Main / Planning /
+// Communication / Analytics / Tools, then a System group for the
+// Apolitics-specific ops features, and Settings/Help pinned at the bottom.
 const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
   {
     title: 'Main',
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: '▦' },
-      { key: 'articles', label: 'Articles', icon: '📰', badge: (s) => s.statusCounts.in_review },
-      { key: 'kanban', label: 'Kanban', icon: '⿲' },
+      { key: 'my-articles', label: 'My articles', icon: '📄' },
+      { key: 'drafts', label: 'Drafts', icon: '✏️', badge: (s) => s.statusCounts.draft },
+      { key: 'in-review', label: 'In review', icon: '🔍', badge: (s) => s.statusCounts.in_review },
+      { key: 'scheduled', label: 'Scheduled', icon: '🕓', badge: (s) => s.statusCounts.scheduled },
+      { key: 'published', label: 'Published', icon: '📢' },
+      { key: 'archive', label: 'Archive', icon: '🗄' },
     ],
   },
   {
     title: 'Planning',
     items: [
-      { key: 'calendar', label: 'Calendar', icon: '📅', badge: (s) => s.statusCounts.scheduled },
       { key: 'tasks', label: 'Tasks', icon: '☑', badge: (s) => s.openTasks },
+      { key: 'calendar', label: 'Calendar', icon: '📅' },
+      { key: 'kanban', label: 'Kanban', icon: '⿲' },
     ],
   },
   {
-    title: 'Community',
-    items: [{ key: 'comments', label: 'Comments', icon: '💬', badge: (s) => s.comments7d }],
+    title: 'Communication',
+    items: [
+      { key: 'comments', label: 'Comments', icon: '💬', badge: (s) => s.comments7d },
+      { key: 'messages', label: 'Messages', icon: '✉️', badge: (s) => s.unreadMessages },
+    ],
+  },
+  {
+    title: 'Analytics',
+    items: [
+      { key: 'views', label: 'Views', icon: '📈' },
+      { key: 'audience', label: 'Audience', icon: '👥' },
+      { key: 'traffic', label: 'Traffic sources', icon: '🧭' },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      { key: 'media', label: 'Media library', icon: '🖼' },
+      { key: 'tags', label: 'Tags', icon: '🏷' },
+      { key: 'templates', label: 'Templates', icon: '📋' },
+    ],
   },
   {
     title: 'System',
     items: [
       { key: 'sources', label: 'Sources', icon: '📡' },
-      { key: 'users', label: 'Users', icon: '👥', ownerOnly: true },
-      { key: 'account', label: 'Account', icon: '⚙' },
+      { key: 'users', label: 'Users', icon: '🧑‍💼', ownerOnly: true },
     ],
   },
+];
+
+const BOTTOM_ITEMS: NavItem[] = [
+  { key: 'settings', label: 'Settings', icon: '⚙' },
+  { key: 'help', label: 'Help & support', icon: '❔' },
 ];
 
 interface AdminShellProps {
@@ -74,10 +124,49 @@ function greetingForHour(hour: number): string {
   return 'Good evening';
 }
 
+function NavButton({
+  item,
+  active,
+  badge,
+  onClick,
+}: {
+  item: NavItem;
+  active: boolean;
+  badge: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-body2 transition-colors hover:text-white"
+    >
+      {active && (
+        <motion.span
+          layoutId="admin-sidebar-pill"
+          className="absolute inset-0 -z-10 rounded-lg bg-brand"
+          transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+        />
+      )}
+      <span className="w-4 text-center text-[13px] leading-none">{item.icon}</span>
+      <span className={active ? 'font-semibold text-white' : ''}>{item.label}</span>
+      {badge > 0 && (
+        <span
+          className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+            active ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
+          }`}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
 /**
- * Editorial-workspace shell per the MediaLine design: fixed dark sidebar with
- * grouped nav + attention badges + user card, and a top bar with greeting,
- * story search, notifications and the primary Create action.
+ * Editorial-workspace shell, a 1:1 structural match of the MediaLine design:
+ * fixed dark sidebar with the five design groups + System, attention badges,
+ * Settings/Help + user card pinned at the bottom; top bar with greeting,
+ * story search (⌘K), notifications and the primary Create action.
  */
 export function AdminShell({ section, onSelectSection, onCreate, onSearch, children }: AdminShellProps) {
   const { user, isOwner, logout } = useAuth();
@@ -87,8 +176,8 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Refresh badge counts whenever the user moves between sections — actions
-  // taken in one section (approving stories, closing tasks) should reflect
-  // in the sidebar without a manual reload.
+  // taken in one section (approving stories, closing tasks, reading
+  // messages) should reflect in the sidebar without a manual reload.
   useEffect(() => {
     authFetch<DashboardStats>('/admin/dashboard/stats')
       .then(setStats)
@@ -119,7 +208,7 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
     year: 'numeric',
   });
   const attention = stats
-    ? stats.statusCounts.in_review + stats.openTasks + stats.comments7d
+    ? stats.statusCounts.in_review + stats.openTasks + stats.comments7d + stats.unreadMessages
     : 0;
 
   const submitSearch = () => {
@@ -130,8 +219,8 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
   return (
     <div className="flex min-h-screen bg-bg">
       {/* ── Sidebar ─────────────────────────────────────── */}
-      <aside className="flex w-60 flex-shrink-0 flex-col bg-slate-950 px-3 py-4 text-slate-300">
-        <Link href="/admin" className="mb-5 flex items-center gap-2.5 px-2">
+      <aside className="flex h-screen w-60 flex-shrink-0 flex-col bg-slate-950 px-3 py-4 text-slate-300">
+        <Link href="/admin" className="mb-4 flex items-center gap-2.5 px-2">
           <Mark size={24} />
           <span>
             <span className="block text-[15px] font-semibold leading-tight text-white">Apolitics</span>
@@ -139,7 +228,7 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
           </span>
         </Link>
 
-        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto">
+        <nav className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter((i) => !i.ownerOnly || isOwner);
             if (items.length === 0) return null;
@@ -148,45 +237,35 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
                 <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
                   {group.title}
                 </div>
-                <div className="flex flex-col gap-0.5">
-                  {items.map((item) => {
-                    const active = section === item.key;
-                    const badge = stats && item.badge ? item.badge(stats) : 0;
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => onSelectSection(item.key)}
-                        className="relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:text-white"
-                      >
-                        {active && (
-                          <motion.span
-                            layoutId="admin-sidebar-pill"
-                            className="absolute inset-0 -z-10 rounded-lg bg-brand"
-                            transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-                          />
-                        )}
-                        <span className="w-4 text-center text-[13px]">{item.icon}</span>
-                        <span className={active ? 'font-semibold text-white' : ''}>{item.label}</span>
-                        {badge > 0 && (
-                          <span
-                            className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
-                              active ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
-                            }`}
-                          >
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-col gap-px">
+                  {items.map((item) => (
+                    <NavButton
+                      key={item.key}
+                      item={item}
+                      active={section === item.key}
+                      badge={stats && item.badge ? item.badge(stats) : 0}
+                      onClick={() => onSelectSection(item.key)}
+                    />
+                  ))}
                 </div>
               </div>
             );
           })}
         </nav>
 
-        <div className="mt-4 border-t border-slate-800 pt-3">
-          <Link href="/" className="mb-3 block px-2.5 text-[11px] text-slate-500 hover:text-white">
+        <div className="mt-3 border-t border-slate-800 pt-2">
+          <div className="flex flex-col gap-px">
+            {BOTTOM_ITEMS.map((item) => (
+              <NavButton
+                key={item.key}
+                item={item}
+                active={section === item.key}
+                badge={0}
+                onClick={() => onSelectSection(item.key)}
+              />
+            ))}
+          </div>
+          <Link href="/" className="mb-2 mt-1 block px-2.5 text-[11px] text-slate-500 hover:text-white">
             ← Back to site
           </Link>
           <div className="flex items-center gap-2.5 rounded-xl bg-slate-900 px-2.5 py-2">
@@ -217,10 +296,10 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-border/10 bg-bg/90 px-6 py-3 backdrop-blur">
           <div className="min-w-0">
-            <h1 className="truncate text-[16px] font-bold text-text-primary">
+            <h1 className="truncate text-h2 text-text-primary">
               {greetingForHour(now.getHours())}, {displayName}! 👋
             </h1>
-            <p className="text-[11px] text-text-tertiary">{dateLine}</p>
+            <p className="text-caption text-text-tertiary">{dateLine}</p>
           </div>
 
           <div className="relative ml-auto hidden w-64 sm:block">
@@ -230,7 +309,7 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submitSearch()}
               placeholder="Search stories…"
-              className="w-full rounded-full border border-border/10 bg-bg-2 py-1.5 pl-8 pr-12 text-[12px] text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
+              className="w-full rounded-full border border-border/10 bg-bg-2 py-1.5 pl-8 pr-12 text-caption text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
             />
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-text-tertiary">
               🔍
@@ -266,13 +345,18 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
                     {
                       count: stats.statusCounts.in_review,
                       label: 'stories awaiting review',
-                      target: 'articles' as AdminSection,
+                      target: 'in-review' as AdminSection,
                     },
                     { count: stats.openTasks, label: 'open tasks', target: 'tasks' as AdminSection },
                     {
                       count: stats.comments7d,
                       label: 'new comments this week',
                       target: 'comments' as AdminSection,
+                    },
+                    {
+                      count: stats.unreadMessages,
+                      label: 'unread messages',
+                      target: 'messages' as AdminSection,
                     },
                   ].map((n) => (
                     <button
@@ -281,14 +365,16 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
                         setBellOpen(false);
                         onSelectSection(n.target);
                       }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-text-secondary hover:bg-bg-3"
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-caption text-text-secondary hover:bg-bg-3"
                     >
                       <span className="font-semibold tabular-nums text-text-primary">{n.count}</span>
                       <span>{n.label}</span>
                     </button>
                   ))}
                   {attention === 0 && (
-                    <p className="px-2.5 py-2 text-[12px] text-text-tertiary">All clear — nothing needs attention.</p>
+                    <p className="px-2.5 py-2 text-caption text-text-tertiary">
+                      All clear — nothing needs attention.
+                    </p>
                   )}
                 </motion.div>
               )}
@@ -298,13 +384,13 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
           <motion.button
             whileTap={{ scale: 0.96 }}
             onClick={onCreate}
-            className="rounded-full bg-brand-bg px-4 py-1.5 text-[12px] font-semibold text-brand-text hover:opacity-90"
+            className="rounded-full bg-brand-bg px-4 py-1.5 text-caption font-semibold text-brand-text hover:opacity-90"
           >
             + Create
           </motion.button>
         </header>
 
-        <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">{children}</main>
       </div>
     </div>
   );
