@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { DashboardStats } from '@geowatch/shared-types';
 import { Mark } from '@/components/Logo';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth, authFetch } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
 
@@ -114,6 +115,11 @@ interface AdminShellProps {
   onSelectSection: (s: AdminSection) => void;
   onCreate: () => void;
   onSearch: (q: string) => void;
+  /**
+   * 'bare' hands the whole main column to the child (the editor workspace
+   * brings its own top bar); 'default' renders the greeting header.
+   */
+  chrome?: 'default' | 'bare';
   children: React.ReactNode;
 }
 
@@ -168,7 +174,7 @@ function NavButton({
  * Settings/Help + user card pinned at the bottom; top bar with greeting,
  * story search (⌘K), notifications and the primary Create action.
  */
-export function AdminShell({ section, onSelectSection, onCreate, onSearch, children }: AdminShellProps) {
+export function AdminShell({ section, onSelectSection, onCreate, onSearch, chrome = 'default', children }: AdminShellProps) {
   const { user, isOwner, logout } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
@@ -293,7 +299,11 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
       </aside>
 
       {/* ── Main column ─────────────────────────────────── */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex h-screen min-w-0 flex-1 flex-col">
+        {chrome === 'bare' ? (
+          <main className="min-h-0 min-w-0 flex-1">{children}</main>
+        ) : (
+          <>
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-border/10 bg-bg/90 px-6 py-3 backdrop-blur">
           <div className="min-w-0">
             <h1 className="truncate text-h2 text-text-primary">
@@ -318,6 +328,8 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
               ⌘K
             </span>
           </div>
+
+          <ThemeToggle />
 
           <div className="relative">
             <button
@@ -391,6 +403,8 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, child
         </header>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">{children}</main>
+          </>
+        )}
       </div>
     </div>
   );

@@ -328,6 +328,7 @@ model Article {
 
   eventLinks ArticleEvent[]
   comments   Comment[]
+  revisions  ArticleRevision[]
 
   @@map("articles")
   @@index([status])
@@ -432,6 +433,24 @@ model PageView {
   @@map("page_views")
   @@index([entityType, entityId])
   @@index([viewedAt(sort: Desc)])
+}
+
+// Content snapshot for the editor's History panel. Written by the autosave
+// path at most once per collapse window (5 min) plus on every status
+// change, so a long writing session leaves a readable trail, not noise.
+model ArticleRevision {
+  id        String   @id @default(uuid()) @db.Uuid
+  articleId String   @map("article_id") @db.Uuid
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  title     String
+  aiSummary String?  @map("ai_summary")
+  body      String?
+  status    ArticleStatus
+  authorId  String?  @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("article_revisions")
+  @@index([articleId, createdAt(sort: Desc)])
 }
 
 // Internal editor-to-editor direct messages ("Messages" in the sidebar).

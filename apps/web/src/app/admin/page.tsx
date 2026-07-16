@@ -9,7 +9,7 @@ import { useAuth, authFetch } from '@/lib/auth';
 import { AdminShell, type AdminSection } from '@/components/admin/AdminShell';
 import { DashboardOverview } from '@/components/admin/DashboardOverview';
 import { SourcesManager } from '@/components/admin/SourcesManager';
-import { ArticleEditor } from '@/components/admin/ArticleEditor';
+import { EditorWorkspace } from '@/components/admin/EditorWorkspace';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
@@ -55,9 +55,9 @@ interface ArticlesSectionProps {
   /** Locked view (sidebar status pages / My articles) or 'all' with tabs. */
   preset: ArticlesPreset;
   title: string;
-  editing: Article | null | 'new';
+  // Opening a story (or 'new') switches the page into the full-screen
+  // editor workspace — the list itself never hosts an inline form anymore.
   setEditing: (e: Article | null | 'new') => void;
-  editorInitial: { title?: string; aiSummary?: string; body?: string; category?: EventCategory } | null;
   searchQuery: string;
   tagFilter: string;
   onClearTag: () => void;
@@ -66,9 +66,7 @@ interface ArticlesSectionProps {
 function ArticlesSection({
   preset,
   title,
-  editing,
   setEditing,
-  editorInitial,
   searchQuery,
   tagFilter,
   onClearTag,
@@ -154,31 +152,15 @@ function ArticlesSection({
             #{tagFilter} ✕
           </button>
         )}
-        {!editing && (
-          <button
-            onClick={() => setEditing('new')}
-            className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-caption font-medium text-brand-text hover:opacity-90"
-          >
-            + New story
-          </button>
-        )}
+        <button
+          onClick={() => setEditing('new')}
+          className="ml-auto rounded-full bg-brand-bg px-4 py-1.5 text-caption font-medium text-brand-text hover:opacity-90"
+        >
+          + New story
+        </button>
       </div>
 
-      {editing && (
-        <div className="mb-6">
-          <ArticleEditor
-            article={editing === 'new' ? null : editing}
-            initial={editing === 'new' ? editorInitial : null}
-            onSaved={() => {
-              setEditing(null);
-              void loadArticles();
-            }}
-            onCancel={() => setEditing(null)}
-          />
-        </div>
-      )}
-
-      {!editing && (
+      {(
         <>
           {preset === 'all' && (
             <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -331,7 +313,12 @@ export default function AdminPage() {
   // button, dashboard cards, kanban cards, calendar entries, analytics rows
   // and templates can all open the editor from anywhere in the workspace.
   const [editing, setEditing] = useState<Article | null | 'new'>(null);
-  const [editorInitial, setEditorInitial] = useState<ArticlesSectionProps['editorInitial']>(null);
+  const [editorInitial, setEditorInitial] = useState<{
+    title?: string;
+    aiSummary?: string;
+    body?: string;
+    category?: EventCategory;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('');
 
@@ -414,6 +401,26 @@ export default function AdminPage() {
 
   const articleView = ARTICLE_VIEWS[section];
 
+  // The editor takes over the whole main column (its own top bar replaces
+  // the greeting header) — the sidebar stays for orientation.
+  if (editing !== null) {
+    return (
+      <AdminShell
+        section={section}
+        onSelectSection={selectSection}
+        onCreate={startCreate}
+        onSearch={setSearchQuery}
+        chrome="bare"
+      >
+        <EditorWorkspace
+          article={editing === 'new' ? null : editing}
+          initial={editing === 'new' ? editorInitial : null}
+          onClose={() => setEditing(null)}
+        />
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell
       section={section}
@@ -434,9 +441,7 @@ export default function AdminPage() {
           key={section}
           preset={articleView.preset}
           title={articleView.title}
-          editing={editing}
           setEditing={setEditing}
-          editorInitial={editorInitial}
           searchQuery={section === 'articles' ? searchQuery : ''}
           tagFilter={section === 'articles' ? tagFilter : ''}
           onClearTag={() => setTagFilter('')}

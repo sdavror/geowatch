@@ -369,6 +369,39 @@ export interface ThreadMessage {
   readAt: string | null;
 }
 
+// ─────────────────────────────────────────────
+// Editor workspace (article editor)
+// ─────────────────────────────────────────────
+
+// Content snapshot in the editor's History panel.
+export interface ArticleRevisionEntry {
+  id: string;
+  title: string;
+  aiSummary: string | null;
+  body: string | null;
+  status: ArticleStatus;
+  createdAt: string;
+  words: number;
+}
+
+export type AssistMode = 'improve' | 'headline' | 'summary' | 'tags' | 'translate' | 'tone';
+
+// POST /admin/analysis/assist — editor copilot result.
+export interface AssistResult {
+  mode: AssistMode;
+  result: string;
+  // headline/tags modes return multiple options to pick from.
+  variants?: string[];
+}
+
+// GET /admin/articles/:id/related — deterministic related-stories lookup.
+export interface RelatedStory {
+  id: string;
+  title: string;
+  category: EventCategory | null;
+  publishedAt: string | null;
+}
+
 // One story on the publication calendar (month view).
 export interface CalendarEntry {
   id: string;

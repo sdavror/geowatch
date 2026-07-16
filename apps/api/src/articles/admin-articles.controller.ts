@@ -64,6 +64,21 @@ export class AdminArticlesController {
     return this.articlesService.calendarMonth(y, m);
   }
 
+  @Get(':id/revisions')
+  revisions(@Param('id') id: string) {
+    return this.articlesService.listRevisions(id);
+  }
+
+  @Post(':id/revisions/:revisionId/restore')
+  restoreRevision(@Param('id') id: string, @Param('revisionId') revisionId: string) {
+    return this.articlesService.restoreRevision(id, revisionId);
+  }
+
+  @Get(':id/related')
+  related(@Param('id') id: string) {
+    return this.articlesService.findRelatedAdmin(id);
+  }
+
   @Post()
   create(@Body() dto: CreateArticleDto, @CurrentUser() user: TokenPayload) {
     return this.articlesService.create({ ...dto, authorId: user.sub });

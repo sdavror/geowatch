@@ -346,6 +346,36 @@ export class ArticlesService {
     const isLive = status === 'published';
     const goingLive = statusTouched && isLive && !existing.published;
 
+    // History trail: snapshot the pre-edit content when the status changes,
+    // or when content changes and the last snapshot is older than the
+    // collapse window — autosave fires every few seconds, but a revision
+    // every keystroke would make History unreadable.
+    const contentTouched =
+      (input.title !== undefined && input.title !== existing.title) ||
+      (input.body !== undefined && input.body !== existing.body) ||
+      (input.aiSummary !== undefined && input.aiSummary !== existing.aiSummary);
+    const statusChanged = statusTouched && status !== existing.status;
+    if (contentTouched || statusChanged) {
+      const last = await this.prisma.articleRevision.findFirst({
+        where: { articleId: id },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const windowMs = 5 * 60_000;
+      if (statusChanged || !last || Date.now() - last.createdAt.getTime() > windowMs) {
+        await this.prisma.articleRevision.create({
+          data: {
+            articleId: id,
+            title: existing.title,
+            aiSummary: existing.aiSummary,
+            body: existing.body,
+            status: existing.status,
+            authorId: existing.authorId,
+          },
+        });
+      }
+    }
+
     const article = await this.prisma.article.update({
       where: { id },
       data: {
@@ -401,6 +431,102 @@ export class ArticlesService {
     await this.prisma.article.delete({ where: { id } });
     await this.invalidate(id);
     return { deleted: true, id };
+  }
+
+  /**
+   * "Find related stories" in the editor — same country first, then same
+   * category, published only. Deterministic (no LLM): an editor wants links
+   * they can trust instantly.
+   */
+  async findRelatedAdmin(articleId: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { id: articleId },
+      select: { countryId: true, category: true },
+    });
+    if (!article) throw new NotFoundException(`Article "${articleId}" not found`);
+
+    const base = { published: true, id: { not: articleId } } as const;
+    const select = { id: true, title: true, category: true, publishedAt: true } as const;
+    const [byCountry, byCategory] = await Promise.all([
+      article.countryId
+        ? this.prisma.article.findMany({
+            where: { ...base, countryId: article.countryId },
+            orderBy: { publishedAt: 'desc' },
+            take: 4,
+            select,
+          })
+        : Promise.resolve([]),
+      article.category
+        ? this.prisma.article.findMany({
+            where: { ...base, category: article.category },
+            orderBy: { publishedAt: 'desc' },
+            take: 4,
+            select,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const seen = new Set<string>();
+    return [...byCountry, ...byCategory]
+      .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
+      .slice(0, 6)
+      .map((a) => ({
+        id: a.id,
+        title: a.title,
+        category: a.category,
+        publishedAt: a.publishedAt?.toISOString() ?? null,
+      }));
+  }
+
+  async listRevisions(articleId: string) {
+    const revisions = await this.prisma.articleRevision.findMany({
+      where: { articleId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return revisions.map((r) => ({
+      id: r.id,
+      title: r.title,
+      aiSummary: r.aiSummary,
+      body: r.body,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      words: r.body?.trim() ? r.body.trim().split(/\s+/).length : 0,
+    }));
+  }
+
+  /**
+   * Restores a snapshot's content through the normal update path, so the
+   * current state itself gets snapshotted first — restoring is always
+   * undoable. Status is deliberately NOT restored (reverting text shouldn't
+   * silently unpublish a live story).
+   */
+  async restoreRevision(articleId: string, revisionId: string) {
+    const revision = await this.prisma.articleRevision.findFirst({
+      where: { id: revisionId, articleId },
+    });
+    if (!revision) throw new NotFoundException('Revision not found');
+
+    // Snapshot the current state unconditionally — the autosave collapse
+    // window must never swallow this one, or a restore couldn't be undone.
+    const current = await this.prisma.article.findUnique({ where: { id: articleId } });
+    if (!current) throw new NotFoundException(`Article "${articleId}" not found`);
+    await this.prisma.articleRevision.create({
+      data: {
+        articleId,
+        title: current.title,
+        aiSummary: current.aiSummary,
+        body: current.body,
+        status: current.status,
+        authorId: current.authorId,
+      },
+    });
+
+    return this.update(articleId, {
+      title: revision.title,
+      aiSummary: revision.aiSummary,
+      body: revision.body,
+    });
   }
 
   private sanitizeTags(tags?: string[]): string[] {
