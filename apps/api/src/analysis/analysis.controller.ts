@@ -36,4 +36,13 @@ export class AnalysisController {
   analyzeEvent(@Body() dto: AnalyzeEventDto) {
     return this.analysis.generateEventImpact(dto.text);
   }
+
+  /**
+   * Raw research brief for a journalist: verifiable facts with periods,
+   * primary-source links, own coverage. No LLM — instant, deterministic.
+   */
+  @Post('research')
+  researchBrief(@Body() dto: AnalyzeEventDto) {
+    return this.analysis.generateResearchBrief(dto.text);
+  }
 }

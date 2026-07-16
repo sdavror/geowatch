@@ -42,6 +42,25 @@ enum SourceType {
   scraper
 }
 
+// Editorial workflow stage of a story. `published` (boolean) stays the
+// public-visibility source of truth; status drives the admin board. The two
+// are kept in sync by ArticlesService (status=published ⇔ published=true).
+enum ArticleStatus {
+  idea
+  draft
+  in_review
+  ready
+  scheduled
+  published
+  archived
+}
+
+enum TaskPriority {
+  urgent
+  high
+  normal
+}
+
 // ─────────────────────────────────────────────
 // Countries
 // ─────────────────────────────────────────────
@@ -299,6 +318,9 @@ model Article {
   contentHash            String?   @unique @map("content_hash")
   imageUrl               String?   @map("image_url")
   published              Boolean   @default(false)
+  status                 ArticleStatus @default(draft)
+  // When status=scheduled: the moment the auto-publisher cron flips it live.
+  scheduledAt            DateTime? @map("scheduled_at")
   authorId               String?   @map("author_id") @db.Uuid
   author                 User?     @relation(fields: [authorId], references: [id])
   fetchedAt              DateTime  @default(now()) @map("fetched_at")
@@ -308,6 +330,7 @@ model Article {
   comments   Comment[]
 
   @@map("articles")
+  @@index([status])
   @@index([countryId])
   @@index([category])
   @@index([publishedAt(sort: Desc)])
@@ -343,8 +366,25 @@ model User {
   refreshTokens RefreshToken[]
   articles      Article[]
   comments      Comment[]
+  tasks         EditorialTask[]
 
   @@map("users")
+}
+
+// Personal editorial to-do items ("My tasks" on the admin dashboard).
+// Per-user, not shared: the design is a journalist's own checklist.
+model EditorialTask {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String       @db.VarChar(300)
+  done      Boolean      @default(false)
+  deadline  DateTime?
+  priority  TaskPriority @default(normal)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@map("editorial_tasks")
+  @@index([userId, done])
 }
 
 model Comment {

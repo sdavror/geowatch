@@ -5,11 +5,14 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { IsString, MinLength, MaxLength } from 'class-validator';
 import { CommentsService } from './comments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { TokenPayload } from '../auth/jwt.util';
 
@@ -44,5 +47,19 @@ export class CommentsController {
   @UseGuards(JwtAuthGuard)
   remove(@Param('id') id: string, @CurrentUser() user: TokenPayload) {
     return this.commentsService.remove(id, user.sub, user.role);
+  }
+
+  @Get('admin/comments')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('editor') // superadmin passes via RolesGuard's owner bypass
+  adminList(@Query('limit') limit?: string) {
+    return this.commentsService.listRecent(Number(limit) || 100);
+  }
+
+  @Delete('admin/comments/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('editor')
+  adminRemove(@Param('id') id: string) {
+    return this.commentsService.removeAsModerator(id);
   }
 }

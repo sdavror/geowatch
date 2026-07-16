@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import type { Article, EventCategory } from '@geowatch/shared-types';
-import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
+import type { Article, ArticleStatus, EventCategory } from '@geowatch/shared-types';
+import { ARTICLE_STATUS_LABEL, CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { useAuth, authFetch } from '@/lib/auth';
 import { AdminShell, type AdminSection } from '@/components/admin/AdminShell';
 import { DashboardOverview } from '@/components/admin/DashboardOverview';
@@ -13,8 +13,28 @@ import { ArticleEditor } from '@/components/admin/ArticleEditor';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
 import { ProfileForm } from '@/components/admin/ProfileForm';
+import { KanbanBoard } from '@/components/admin/KanbanBoard';
+import { CalendarGrid } from '@/components/admin/CalendarGrid';
+import { TaskList } from '@/components/admin/TaskList';
+import { CommentsSection } from '@/components/admin/CommentsSection';
+import { StatusBadge } from '@/components/admin/StatusBadge';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { mediaUrl } from '@/lib/api';
+
+type StatusFilter = 'all' | ArticleStatus;
+
+// Tab order mirrors the editorial flow; the review queue leads because
+// that's what an editor opening this page needs to see first.
+const STATUS_FILTERS: StatusFilter[] = [
+  'in_review',
+  'all',
+  'idea',
+  'draft',
+  'ready',
+  'scheduled',
+  'published',
+  'archived',
+];
 
 // A one-line gauge of "is there anything here" for the moderation queue —
 // most ingested stories are RSS excerpts a few sentences long, and an
@@ -24,21 +44,27 @@ function wordCount(text: string | null | undefined): number {
   return text?.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-function NewsSection() {
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [counts, setCounts] = useState({ pending: 0, published: 0, total: 0 });
-  const [listError, setListError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Article | null | 'new'>(null);
-  // Moderation queue defaults to "Pending" — ingestion drops new stories in
-  // unreviewed, so that's what an editor opening this page needs to see first.
-  const [newsFilter, setNewsFilter] = useState<'pending' | 'published' | 'all'>('pending');
+interface ArticlesSectionProps {
+  editing: Article | null | 'new';
+  setEditing: (e: Article | null | 'new') => void;
+  searchQuery: string;
+}
 
-  const loadArticles = useCallback(async (filter: 'pending' | 'published' | 'all') => {
+function ArticlesSection({ editing, setEditing, searchQuery }: ArticlesSectionProps) {
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [counts, setCounts] = useState<{ total: number; byStatus: Record<string, number> } | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>('in_review');
+
+  const loadArticles = useCallback(async (f: StatusFilter, q: string) => {
     try {
-      const qs = filter === 'all' ? '' : `?published=${filter === 'published'}`;
+      const params = new URLSearchParams();
+      if (f !== 'all') params.set('status', f);
+      if (q) params.set('q', q);
+      const qs = params.toString() ? `?${params.toString()}` : '';
       const [list, c] = await Promise.all([
         authFetch<Article[]>(`/admin/articles${qs}`),
-        authFetch<{ pending: number; published: number; total: number }>('/admin/articles/counts'),
+        authFetch<{ total: number; byStatus: Record<string, number> }>('/admin/articles/counts'),
       ]);
       setArticles(list);
       setCounts(c);
@@ -48,36 +74,52 @@ function NewsSection() {
     }
   }, []);
 
+  // A search from the header shows matches across every stage — switching
+  // to "all" avoids the confusing "searched but the queue tab hid it" case.
   useEffect(() => {
-    void loadArticles(newsFilter);
-  }, [newsFilter, loadArticles]);
+    if (searchQuery) setFilter('all');
+  }, [searchQuery]);
+
+  useEffect(() => {
+    void loadArticles(filter, searchQuery);
+  }, [filter, searchQuery, loadArticles]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this story permanently?')) return;
     try {
       await authFetch(`/admin/articles/${id}`, { method: 'DELETE' });
-      await loadArticles(newsFilter);
+      await loadArticles(filter, searchQuery);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
-  const togglePublish = async (a: Article) => {
+  const setStatus = async (a: Article, status: ArticleStatus) => {
     try {
       await authFetch(`/admin/articles/${a.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ published: !a.published }),
+        body: JSON.stringify({ status }),
       });
-      await loadArticles(newsFilter);
+      await loadArticles(filter, searchQuery);
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Update failed');
     }
   };
 
+  const filterLabel = (f: StatusFilter) =>
+    f === 'all' ? 'All' : f === 'in_review' ? 'In review' : ARTICLE_STATUS_LABEL[f];
+  const filterCount = (f: StatusFilter) =>
+    counts ? (f === 'all' ? counts.total : (counts.byStatus?.[f] ?? 0)) : null;
+
   return (
     <div>
       <div className="mb-5 flex items-center gap-1.5">
-        <h1 className="mr-2 text-lg font-bold text-text-primary">News</h1>
+        <h1 className="mr-2 text-lg font-bold text-text-primary">Articles</h1>
+        {searchQuery && (
+          <span className="rounded-full bg-bg-3 px-2.5 py-1 text-[11px] text-text-secondary">
+            search: “{searchQuery}”
+          </span>
+        )}
         {!editing && (
           <button
             onClick={() => setEditing('new')}
@@ -94,7 +136,7 @@ function NewsSection() {
             article={editing === 'new' ? null : editing}
             onSaved={() => {
               setEditing(null);
-              void loadArticles(newsFilter);
+              void loadArticles(filter, searchQuery);
             }}
             onCancel={() => setEditing(null)}
           />
@@ -103,29 +145,29 @@ function NewsSection() {
 
       {!editing && (
         <>
-          <div className="mb-4 flex items-center gap-1.5">
-            {(['pending', 'published', 'all'] as const).map((f) => (
+          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+            {STATUS_FILTERS.map((f) => (
               <button
                 key={f}
-                onClick={() => setNewsFilter(f)}
-                className={`relative rounded-full px-3 py-1 text-[12px] capitalize transition-colors ${
-                  newsFilter === f ? 'font-medium text-brand-text' : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
+                onClick={() => setFilter(f)}
+                className={`relative rounded-full px-3 py-1 text-[12px] transition-colors ${
+                  filter === f ? 'font-medium text-brand-text' : 'bg-bg-3 text-text-tertiary hover:text-text-secondary'
                 }`}
               >
-                {newsFilter === f && (
+                {filter === f && (
                   <motion.span
                     layoutId="admin-filter-pill"
                     className="absolute inset-0 -z-10 rounded-full bg-brand-bg"
                     transition={{ type: 'spring', stiffness: 500, damping: 34 }}
                   />
                 )}
-                {f} {f === 'pending' ? counts.pending : f === 'published' ? counts.published : counts.total}
+                {filterLabel(f)} {filterCount(f) ?? ''}
               </button>
             ))}
           </div>
           {listError && <p className="mb-3 text-xs text-status-conflict">{listError}</p>}
           <motion.div
-            key={newsFilter}
+            key={`${filter}:${searchQuery}`}
             initial="hidden"
             animate="visible"
             variants={{ visible: { transition: { staggerChildren: 0.025 } } }}
@@ -153,7 +195,10 @@ function NewsSection() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <div className="truncate text-[14px] text-text-primary">{a.title}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[14px] text-text-primary">{a.title}</span>
+                      {a.status && <StatusBadge status={a.status} className="flex-shrink-0" />}
+                    </div>
                     {snippet && (
                       <div className="mt-0.5 truncate text-[12px] text-text-tertiary">{snippet}</div>
                     )}
@@ -174,10 +219,14 @@ function NewsSection() {
                         </span>
                       )}
                       <span className="text-text-tertiary">
-                        {formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
-                      </span>
-                      <span className={a.published ? 'text-status-stable' : 'text-text-tertiary'}>
-                        ● {a.published ? 'Published' : 'Draft'}
+                        {a.status === 'scheduled' && a.scheduledAt
+                          ? `goes live ${new Date(a.scheduledAt).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}`
+                          : formatRelativeTime(a.publishedAt ?? a.createdAt ?? null)}
                       </span>
                       <span className={words === 0 ? 'text-status-conflict' : words < 30 ? 'text-status-crisis' : 'text-text-tertiary'}>
                         {words === 0 ? 'No body text' : `${words} words`}
@@ -187,10 +236,10 @@ function NewsSection() {
                   </div>
                   <div className="flex flex-shrink-0 items-center gap-2 self-center">
                     <button
-                      onClick={() => togglePublish(a)}
+                      onClick={() => setStatus(a, a.status === 'published' ? 'archived' : 'published')}
                       className="rounded-md border border-border/10 bg-bg-3 px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-4"
                     >
-                      {a.published ? 'Unpublish' : 'Publish'}
+                      {a.status === 'published' ? 'Archive' : 'Publish'}
                     </button>
                     <button
                       onClick={() => setEditing(a)}
@@ -210,11 +259,13 @@ function NewsSection() {
             })}
             {articles.length === 0 && !listError && (
               <p className="py-8 text-center text-xs text-text-tertiary">
-                {newsFilter === 'pending'
-                  ? 'No pending stories — the queue is clear.'
-                  : newsFilter === 'published'
-                    ? 'Nothing published yet.'
-                    : 'No stories yet. Create your first one.'}
+                {searchQuery
+                  ? 'No stories match your search.'
+                  : filter === 'in_review'
+                    ? 'No stories awaiting review — the queue is clear.'
+                    : filter === 'published'
+                      ? 'Nothing published yet.'
+                      : 'Nothing here yet.'}
               </p>
             )}
           </motion.div>
@@ -228,6 +279,39 @@ export default function AdminPage() {
   const router = useRouter();
   const { user, loading, canEdit, isOwner } = useAuth();
   const [section, setSection] = useState<AdminSection>('dashboard');
+  // Editing state lives here (not in ArticlesSection) so the header Create
+  // button, dashboard cards, kanban cards and calendar entries can all open
+  // the editor from anywhere in the workspace.
+  const [editing, setEditing] = useState<Article | null | 'new'>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const openArticle = useCallback((article: Article) => {
+    setEditing(article);
+    setSection('articles');
+  }, []);
+
+  const openArticleById = useCallback(async (id: string) => {
+    try {
+      const article = await authFetch<Article>(`/articles/${id}`);
+      setEditing(article);
+      setSection('articles');
+    } catch {
+      // Ignore — the story may have been deleted since the calendar loaded.
+    }
+  }, []);
+
+  const startCreate = useCallback(() => {
+    setEditing('new');
+    setSection('articles');
+  }, []);
+
+  const selectSection = useCallback((s: AdminSection) => {
+    setSection(s);
+    if (s !== 'articles') {
+      setEditing(null);
+      setSearchQuery('');
+    }
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -262,9 +346,39 @@ export default function AdminPage() {
   }
 
   return (
-    <AdminShell section={section} onSelectSection={setSection}>
-      {section === 'dashboard' && <DashboardOverview />}
-      {section === 'news' && <NewsSection />}
+    <AdminShell
+      section={section}
+      onSelectSection={selectSection}
+      onCreate={startCreate}
+      onSearch={setSearchQuery}
+    >
+      {section === 'dashboard' && (
+        <DashboardOverview
+          onOpenArticle={openArticle}
+          onCreate={startCreate}
+          onGotoArticles={() => selectSection('articles')}
+          onGotoTasks={() => selectSection('tasks')}
+        />
+      )}
+      {section === 'articles' && (
+        <ArticlesSection editing={editing} setEditing={setEditing} searchQuery={searchQuery} />
+      )}
+      {section === 'kanban' && <KanbanBoard onOpenArticle={openArticle} />}
+      {section === 'calendar' && (
+        <div className="max-w-2xl">
+          <h1 className="mb-4 text-lg font-bold text-text-primary">Publication calendar</h1>
+          <div className="rounded-2xl border border-border/10 bg-bg-2 p-5">
+            <CalendarGrid onOpenArticle={openArticleById} />
+          </div>
+        </div>
+      )}
+      {section === 'tasks' && (
+        <div className="max-w-2xl">
+          <h1 className="mb-4 text-lg font-bold text-text-primary">Tasks</h1>
+          <TaskList />
+        </div>
+      )}
+      {section === 'comments' && <CommentsSection />}
       {section === 'sources' && <SourcesManager />}
       {section === 'users' && isOwner && <UserManager />}
       {section === 'account' && (

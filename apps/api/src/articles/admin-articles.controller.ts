@@ -22,6 +22,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { TokenPayload } from '../auth/jwt.util';
 import { imageUploadOptions, UploadedImage } from '../upload/upload.config';
 
+const STATUSES = ['idea', 'draft', 'in_review', 'ready', 'scheduled', 'published', 'archived'];
+
 @Controller('admin/articles')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('editor') // superadmin passes via RolesGuard's owner bypass
@@ -29,14 +31,32 @@ export class AdminArticlesController {
   constructor(private readonly articlesService: ArticlesService) {}
 
   @Get()
-  list(@Query('published') published?: string) {
-    const filter = published === undefined ? undefined : published === 'true';
-    return this.articlesService.findAllAdmin(filter);
+  list(
+    @Query('published') published?: string,
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.articlesService.findAllAdmin({
+      published: published === undefined ? undefined : published === 'true',
+      status: STATUSES.includes(status ?? '') ? (status as never) : undefined,
+      q: q?.trim() || undefined,
+    });
   }
 
   @Get('counts')
   counts() {
     return this.articlesService.countAdmin();
+  }
+
+  @Get('calendar')
+  calendar(@Query('year') year?: string, @Query('month') month?: string) {
+    const now = new Date();
+    const y = Number(year) || now.getUTCFullYear();
+    const m = Number(month) || now.getUTCMonth() + 1;
+    if (m < 1 || m > 12 || y < 2000 || y > 2100) {
+      throw new BadRequestException('year/month out of range');
+    }
+    return this.articlesService.calendarMonth(y, m);
   }
 
   @Post()

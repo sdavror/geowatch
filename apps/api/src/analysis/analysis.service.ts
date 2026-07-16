@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { EventImpactReport } from '@geowatch/shared-types';
+import type { EventImpactReport, ResearchBrief, CountryResearch, ResearchFact } from '@geowatch/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
 import { OllamaClient } from './ollama.client';
 import { WORLD_BANK_INDICATORS } from '../macro/worldbank.adapter';
@@ -30,9 +30,9 @@ interface CountryContext {
   indicators: Array<{ indicatorCode: string; value: unknown; period: Date; isForecast: boolean }>;
   sanctions: { entityCount: number } | null;
   riskHistory: { score: unknown } | null;
-  recentArticles: Array<{ title: string; category: string | null; publishedAt: Date | null }>;
-  officialStatements: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
-  mediaReports: Array<{ title: string; publishedAt: Date | null; source: { name: string } | null }>;
+  recentArticles: Array<{ id: string; title: string; category: string | null; publishedAt: Date | null }>;
+  officialStatements: Array<{ title: string; url: string; publishedAt: Date | null; source: { name: string } | null }>;
+  mediaReports: Array<{ title: string; url: string; publishedAt: Date | null; source: { name: string } | null }>;
   tradePartners: Array<{ partnerName: string; flow: string; year: number; valueUsd: bigint }>;
 }
 
@@ -71,7 +71,121 @@ export class AnalysisService {
 
     const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks);
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
-    return this.repairEventReport(raw);
+
+    // Built from what was actually non-empty when the prompt was assembled
+    // — not asked of the model, so the citation list can't hallucinate a
+    // source that wasn't really used.
+    const sources = [...new Set([...involved.flatMap((ctx) => this.citationsFor(ctx)), ...(energyBenchmarks.length > 0 ? ['EIA (energy spot prices)'] : []), ...(peers.length > 0 ? ['Apolitics Country Health Index (regional peers)'] : [])])];
+
+    return this.repairEventReport(raw, sources);
+  }
+
+  /**
+   * Raw verifiable facts for a journalist to write from — deliberately no
+   * LLM in the loop: real numbers with periods, primary sources with URLs
+   * to the originals, own related coverage. The complement to
+   * generateEventImpact: that one interprets, this one documents.
+   */
+  async generateResearchBrief(text: string): Promise<ResearchBrief> {
+    const countries = await this.prisma.country.findMany({ select: { id: true, name: true } });
+    const involvedIds = matchCountries(text, countries).slice(0, MAX_INVOLVED_COUNTRIES);
+    if (involvedIds.length === 0) {
+      throw new BadRequestException(
+        'The text must name at least one country — the research brief is grounded in per-country data.',
+      );
+    }
+
+    const [contexts, energyBenchmarks] = await Promise.all([
+      Promise.all(involvedIds.map((id) => this.gatherCountryContext(id))),
+      this.energy.latestBenchmarks(),
+    ]);
+
+    const fmtBn = (v: bigint) => `$${(Number(v) / 1e9).toFixed(1)}bn`;
+
+    const countriesResearch: CountryResearch[] = contexts.map((ctx) => {
+      const facts: ResearchFact[] = [];
+      if (ctx.healthScore) {
+        facts.push({
+          label: 'Country Health score',
+          value: `${Number(ctx.healthScore.value).toFixed(0)}/100`,
+          period: 'latest',
+          source: 'Apolitics index',
+        });
+      }
+      if (ctx.riskHistory) {
+        facts.push({
+          label: 'Conflict/stability risk',
+          value: `${Number(ctx.riskHistory.score).toFixed(1)}/10 (${ctx.country.status})`,
+          period: 'latest',
+          source: 'Apolitics index',
+        });
+      }
+      for (const ind of ctx.indicators) {
+        facts.push({
+          label: INDICATOR_LABELS[ind.indicatorCode] ?? ind.indicatorCode,
+          value: Number(ind.value).toFixed(2),
+          period: `${ind.isForecast ? 'forecast' : 'actual'} ${ind.period.getFullYear()}`,
+          source: ind.isForecast ? 'IMF WEO' : 'World Bank',
+        });
+      }
+      if (ctx.sanctions) {
+        facts.push({
+          label: 'Sanctioned entities',
+          value: String(ctx.sanctions.entityCount),
+          period: 'latest',
+          source: 'OpenSanctions',
+        });
+      }
+      const year = ctx.tradePartners[0]?.year;
+      for (const flow of ['X', 'M'] as const) {
+        const rows = ctx.tradePartners.filter((t) => t.flow === flow);
+        if (rows.length > 0) {
+          facts.push({
+            label: flow === 'X' ? 'Top export destinations' : 'Top import origins',
+            value: rows.map((t) => `${t.partnerName} ${fmtBn(t.valueUsd)}`).join(', '),
+            period: `actual ${year}`,
+            source: 'UN Comtrade',
+          });
+        }
+      }
+
+      return {
+        countryId: ctx.country.id,
+        countryName: ctx.country.name,
+        facts,
+        statements: ctx.officialStatements.map((s) => ({
+          title: s.title,
+          url: s.url,
+          source: s.source?.name ?? 'Official source',
+          date: s.publishedAt ? s.publishedAt.toISOString().slice(0, 10) : null,
+          official: true,
+        })),
+        mediaReports: ctx.mediaReports.map((m) => ({
+          title: m.title,
+          url: m.url,
+          source: m.source?.name ?? 'Media',
+          date: m.publishedAt ? m.publishedAt.toISOString().slice(0, 10) : null,
+          official: false,
+        })),
+        ownCoverage: ctx.recentArticles.map((a) => ({
+          title: a.title,
+          url: `/news/${a.id}`,
+          source: 'Apolitics',
+          date: a.publishedAt ? a.publishedAt.toISOString().slice(0, 10) : null,
+          official: false,
+        })),
+      };
+    });
+
+    return {
+      countries: countriesResearch,
+      energy: energyBenchmarks.map((b) => ({
+        label: b.name,
+        value: `${b.value} ${b.units}${b.change30dPct !== null ? ` (${b.change30dPct > 0 ? '+' : ''}${b.change30dPct}% / 30d)` : ''}`,
+        period: `as of ${b.latestPeriod}`,
+        source: 'EIA',
+      })),
+    };
   }
 
   private async gatherCountryContext(id: string): Promise<CountryContext> {
@@ -99,7 +213,7 @@ export class AnalysisService {
         where: { countryId: id, published: true },
         orderBy: { publishedAt: 'desc' },
         take: 5,
-        select: { title: true, category: true, publishedAt: true },
+        select: { id: true, title: true, category: true, publishedAt: true },
       }),
       this.prisma.riskScoreHistory.findFirst({
         where: { countryId: id },
@@ -112,7 +226,7 @@ export class AnalysisService {
         where: { countryId: id, source: { official: true } },
         orderBy: { publishedAt: 'desc' },
         take: 5,
-        select: { title: true, publishedAt: true, source: { select: { name: true } } },
+        select: { title: true, url: true, publishedAt: true, source: { select: { name: true } } },
       }),
       // Grey-tier local media (Telegram news channels, official:false).
       // Like official statements they're source data, not our editorial
@@ -126,7 +240,7 @@ export class AnalysisService {
         },
         orderBy: { publishedAt: 'desc' },
         take: 5,
-        select: { title: true, publishedAt: true, source: { select: { name: true } } },
+        select: { title: true, url: true, publishedAt: true, source: { select: { name: true } } },
       }),
       this.prisma.tradeFlow.findMany({
         where: { reporterId: id },
@@ -272,6 +386,27 @@ export class AnalysisService {
     return lines;
   }
 
+  /** Citation strings for whichever of this country's data sections were actually non-empty. */
+  private citationsFor(ctx: CountryContext): string[] {
+    const cites: string[] = [];
+    if (ctx.healthScore || ctx.riskHistory) cites.push('Apolitics Country Health Index');
+    if (ctx.indicators.some((i) => !i.isForecast)) cites.push('World Bank (economic indicators)');
+    if (ctx.indicators.some((i) => i.isForecast)) cites.push('IMF World Economic Outlook (forecasts)');
+    if (ctx.sanctions) cites.push('OpenSanctions');
+    if (ctx.tradePartners.length > 0) cites.push('UN Comtrade (bilateral trade data)');
+    if (ctx.recentArticles.length > 0) cites.push('Apolitics published coverage');
+    // Statements and media reports cite the concrete item with its URL —
+    // "US State Department (official statement)" alone gives a journalist
+    // nothing to open, quote, or verify.
+    for (const s of ctx.officialStatements) {
+      cites.push(`${s.source?.name ?? 'Official source'}: "${s.title}" — ${s.url}`);
+    }
+    for (const m of ctx.mediaReports) {
+      cites.push(`${m.source?.name ?? 'Media'} (unverified): "${m.title}" — ${m.url}`);
+    }
+    return cites;
+  }
+
   private buildCountryPrompt(ctx: CountryContext): string {
     const lines: string[] = [];
     lines.push(
@@ -375,7 +510,7 @@ export class AnalysisService {
   }
 
   /** Coerce whatever the model returned into the report shape, then compose the plain-text body. */
-  private repairEventReport(raw: Record<string, unknown>): EventImpactReport {
+  private repairEventReport(raw: Record<string, unknown>, sources: string[]): EventImpactReport {
     const toStringArray = (v: unknown): string[] => {
       if (Array.isArray(v)) return v.map((x) => String(typeof x === 'object' && x !== null ? JSON.stringify(x) : x)).filter(Boolean);
       if (typeof v === 'string' && v.trim()) return [v.trim()];
@@ -400,6 +535,7 @@ export class AnalysisService {
       impactShortTerm: toStringArray(raw.impact_short_term ?? raw.impactShortTerm),
       impactMediumTerm: toStringArray(raw.impact_medium_term ?? raw.impactMediumTerm),
       watchpoints: toStringArray(raw.watchpoints),
+      sources,
     };
     return { ...report, body: this.composeEventBody(report) };
   }
@@ -420,6 +556,9 @@ export class AnalysisService {
     }
     if (r.watchpoints.length > 0) {
       sections.push('WHAT TO WATCH\n\n' + bullet(r.watchpoints));
+    }
+    if (r.sources.length > 0) {
+      sections.push('SOURCES\n\n' + bullet(r.sources));
     }
     return sections.join('\n\n');
   }

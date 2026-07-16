@@ -16,6 +16,29 @@ export type SourceType = 'wire' | 'rss' | 'api' | 'scraper';
 
 export type EntityType = 'country' | 'event' | 'article';
 
+// Editorial workflow stage (admin board). `published` boolean remains the
+// public-visibility flag; the API keeps the two in sync.
+export type ArticleStatus =
+  | 'idea'
+  | 'draft'
+  | 'in_review'
+  | 'ready'
+  | 'scheduled'
+  | 'published'
+  | 'archived';
+
+export const ARTICLE_STATUS_LABEL: Record<ArticleStatus, string> = {
+  idea: 'Idea',
+  draft: 'Draft',
+  in_review: 'In review',
+  ready: 'Ready to publish',
+  scheduled: 'Scheduled',
+  published: 'Published',
+  archived: 'Archived',
+};
+
+export type TaskPriority = 'urgent' | 'high' | 'normal';
+
 // ─────────────────────────────────────────────
 // Country
 // ─────────────────────────────────────────────
@@ -75,6 +98,39 @@ export interface MacroScoreEntry {
   components: Record<string, number> | null;
 }
 
+// Research brief — RAW verifiable facts for a journalist to write from,
+// deliberately NOT LLM prose: real indicator values with years, primary
+// sources with clickable URLs, own related coverage. Served by
+// POST /admin/analysis/research.
+export interface ResearchFact {
+  label: string;
+  value: string;
+  period: string; // "actual 2024" | "forecast 2030" | ISO date
+  source: string; // e.g. "World Bank", "IMF WEO"
+}
+
+export interface ResearchLink {
+  title: string;
+  url: string;
+  source: string;
+  date: string | null; // YYYY-MM-DD
+  official: boolean;
+}
+
+export interface CountryResearch {
+  countryId: string;
+  countryName: string;
+  facts: ResearchFact[];
+  statements: ResearchLink[]; // official, with URLs to the originals
+  mediaReports: ResearchLink[]; // grey tier, clearly separated
+  ownCoverage: ResearchLink[]; // our own published articles
+}
+
+export interface ResearchBrief {
+  countries: CountryResearch[];
+  energy: ResearchFact[];
+}
+
 // Structured event-impact report from the local-LLM analysis layer
 // (POST /admin/analysis/event). Every section is periodized: whatHappened
 // is the event itself, impact horizons are explicit (0–3 / 3–12 months)
@@ -87,6 +143,9 @@ export interface EventImpactReport {
   impactShortTerm: string[]; // 0–3 months
   impactMediumTerm: string[]; // 3–12 months
   watchpoints: string[]; // indicators/decisions worth monitoring
+  // Which underlying data actually fed the prompt — computed from what was
+  // non-empty, not asked of the model, so it can't hallucinate a citation.
+  sources: string[];
   // Sections composed into one plain-text document (the article page
   // renders body as pre-wrap text), ready to prefill the editor.
   body: string;
@@ -201,10 +260,59 @@ export interface Article {
   sentimentScore: number | null;
   imageUrl?: string | null;
   published?: boolean;
+  status?: ArticleStatus;
+  scheduledAt?: string | null;
+  author?: { id: string; name: string; avatarUrl: string | null } | null;
   fetchedAt?: string;
   createdAt?: string;
   // Only present on GET /articles/most-read responses.
   viewCount?: number;
+}
+
+// ─────────────────────────────────────────────
+// Editorial workspace (admin panel)
+// ─────────────────────────────────────────────
+
+// Personal to-do item — "My tasks" widget + Tasks section.
+export interface EditorialTask {
+  id: string;
+  title: string;
+  done: boolean;
+  deadline: string | null; // ISO date-time
+  priority: TaskPriority;
+  createdAt: string;
+}
+
+// GET /admin/dashboard/stats — everything the dashboard header cards need.
+export interface DashboardStats {
+  statusCounts: Record<ArticleStatus, number>;
+  totalArticles: number;
+  // Stories created (drafts) / went live (published) in the trailing 7 days.
+  weeklyNew: { published: number; drafts: number };
+  views30d: number;
+  // Percent change vs the preceding 30-day window; null when no baseline.
+  viewsChangePct: number | null;
+  openTasks: number;
+  comments7d: number;
+}
+
+// One story on the publication calendar (month view).
+export interface CalendarEntry {
+  id: string;
+  title: string;
+  status: ArticleStatus;
+  // The day the story occupies on the calendar: publishedAt for published,
+  // scheduledAt for scheduled, createdAt otherwise. ISO date-time.
+  date: string;
+}
+
+// Admin comments moderation row — comment + enough article context to judge it.
+export interface AdminComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string; avatarUrl: string | null };
+  article: { id: string; title: string };
 }
 
 // ─────────────────────────────────────────────

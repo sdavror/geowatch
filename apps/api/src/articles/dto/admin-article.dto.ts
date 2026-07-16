@@ -1,14 +1,17 @@
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 const CATEGORIES = ['military', 'economic', 'political', 'humanitarian'];
+const STATUSES = ['idea', 'draft', 'in_review', 'ready', 'scheduled', 'published', 'archived'];
 
 export class CreateArticleDto {
   @IsString()
@@ -39,6 +42,14 @@ export class CreateArticleDto {
   @IsOptional()
   @IsBoolean()
   published?: boolean;
+
+  @IsOptional()
+  @IsIn(STATUSES)
+  status?: string;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
 }
 
 export class UpdateArticleDto {
@@ -71,6 +82,16 @@ export class UpdateArticleDto {
   @IsOptional()
   @IsBoolean()
   published?: boolean;
+
+  @IsOptional()
+  @IsIn(STATUSES)
+  status?: string;
+
+  // Empty string clears the schedule (JSON null also works via the service).
+  @IsOptional()
+  @ValidateIf((o: UpdateArticleDto) => o.scheduledAt !== null && o.scheduledAt !== '')
+  @IsDateString()
+  scheduledAt?: string | null;
 
   @IsOptional()
   @IsArray()

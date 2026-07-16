@@ -1,12 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import type { Article, EventCategory } from '@geowatch/shared-types';
-import { CATEGORY_LABEL } from '@geowatch/shared-types';
+import type { Article, ArticleStatus, EventCategory } from '@geowatch/shared-types';
+import { ARTICLE_STATUS_LABEL, CATEGORY_LABEL } from '@geowatch/shared-types';
 import { authFetch, uploadImage } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
+import { ResearchPanel } from './ResearchPanel';
 
 const CATEGORIES: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
+const STATUSES: ArticleStatus[] = ['idea', 'draft', 'in_review', 'ready', 'scheduled', 'published', 'archived'];
+
+/** ISO → value usable by <input type="datetime-local"> (local wall time). */
+function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 interface ArticleEditorProps {
   article: Article | null; // null = create new
@@ -23,11 +33,20 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
   const [aiSummary, setSummary] = useState(article?.aiSummary ?? '');
   const [body, setBody] = useState(article?.body ?? '');
   const [imageUrl, setImageUrl] = useState<string | null>(article?.imageUrl ?? null);
-  const [published, setPublished] = useState(article?.published ?? false);
+  const [status, setStatus] = useState<ArticleStatus>(
+    article?.status ?? (article?.published ? 'published' : 'draft'),
+  );
+  const [scheduledAt, setScheduledAt] = useState(toLocalInputValue(article?.scheduledAt));
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [eventText, setEventText] = useState('');
+  // Pre-fill from the ingested story's own text so enriching an existing
+  // pending article (the common case — ~1000 thin RSS/Telegram snippets
+  // waiting in the queue) takes one click instead of retyping the event.
+  // Still freely editable for describing a brand-new event from scratch.
+  const [eventText, setEventText] = useState(
+    article ? `${article.title}. ${(article.body ?? '').trim()}`.slice(0, 1900) : '',
+  );
   const [analyzingEvent, setAnalyzingEvent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +113,12 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
     }
   };
 
-  const handleSave = async (publish: boolean) => {
+  const handleSave = async (statusOverride?: ArticleStatus) => {
+    const finalStatus = statusOverride ?? status;
+    if (finalStatus === 'scheduled' && !scheduledAt) {
+      setError('Pick a date & time for the scheduled publication');
+      return;
+    }
     setBusy(true);
     setError(null);
     const payload = {
@@ -104,7 +128,9 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
       aiSummary: aiSummary.trim() || null,
       body: body.trim() || null,
       imageUrl,
-      published: publish,
+      status: finalStatus,
+      scheduledAt:
+        finalStatus === 'scheduled' && scheduledAt ? new Date(scheduledAt).toISOString() : null,
     };
     try {
       if (article) {
@@ -188,7 +214,9 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
       </div>
 
       <label className="mb-1 block text-[12px] text-text-secondary">
-        Event impact (describe a reported event; the analysis is grounded in the involved countries&apos; data)
+        {article
+          ? "Enrich from source data — pre-filled from this story; edit if needed, then run"
+          : "Event impact (describe a reported event; the analysis is grounded in the involved countries' data)"}
       </label>
       <div className="mb-3 flex items-start gap-3">
         <textarea
@@ -202,12 +230,14 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
           type="button"
           onClick={handleAnalyzeEvent}
           disabled={analyzingEvent || generating || busy || uploading}
-          title="Structured impact assessment: who is affected, short/medium-term regional macro consequences (local LLM)"
+          title="Structured impact assessment grounded in real data — country health, trade, energy, sanctions, official statements — plus a Sources list (local LLM)"
           className="whitespace-nowrap rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
         >
-          {analyzingEvent ? 'Analyzing…' : '⚡ Analyze event'}
+          {analyzingEvent ? 'Analyzing…' : article ? '🔎 Enrich from source data' : '⚡ Analyze event'}
         </button>
       </div>
+
+      <ResearchPanel text={eventText} />
 
       <label className="mb-1 block text-[12px] text-text-secondary">Summary</label>
       <textarea
@@ -251,21 +281,51 @@ export function ArticleEditor({ article, onSaved, onCancel }: ArticleEditorProps
 
       {error && <p className="mb-3 text-xs text-status-conflict">{error}</p>}
 
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-[12px] text-text-secondary">Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as ArticleStatus)}
+            className="rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
+          >
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {ARTICLE_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+        {status === 'scheduled' && (
+          <div>
+            <label className="mb-1 block text-[12px] text-text-secondary">Publish at</label>
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+              className="rounded-lg border border-border/10 bg-bg-3 px-3 py-2 text-sm text-text-primary focus:border-accent-blue focus:outline-none"
+            />
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-2">
         <button
-          onClick={() => handleSave(false)}
+          onClick={() => handleSave()}
           disabled={busy || uploading || !title.trim()}
           className="rounded-lg border border-border/10 bg-bg-3 px-4 py-2 text-xs text-text-secondary hover:bg-bg-4 disabled:opacity-50"
         >
-          Save draft
+          Save ({ARTICLE_STATUS_LABEL[status]})
         </button>
-        <button
-          onClick={() => handleSave(true)}
-          disabled={busy || uploading || !title.trim()}
-          className="rounded-lg bg-brand-bg px-4 py-2 text-xs font-medium text-brand-text hover:opacity-90 disabled:opacity-50"
-        >
-          {published ? 'Save & keep published' : 'Publish'}
-        </button>
+        {status !== 'published' && (
+          <button
+            onClick={() => handleSave('published')}
+            disabled={busy || uploading || !title.trim()}
+            className="rounded-lg bg-brand-bg px-4 py-2 text-xs font-medium text-brand-text hover:opacity-90 disabled:opacity-50"
+          >
+            Publish now
+          </button>
+        )}
       </div>
     </div>
   );
