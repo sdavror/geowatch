@@ -3,6 +3,7 @@ import { Inter, Lora } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider, THEME_INIT_SCRIPT } from '@/components/ThemeProvider';
 import { AuthProvider } from '@/lib/auth';
+import { CookieConsent } from '@/components/CookieConsent';
 
 // Fonts are downloaded at build time and self-hosted — no runtime requests
 // to Google. Inter: tall x-height, stays legible at the small sizes a dense
@@ -53,7 +54,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-bg font-sans text-text-primary antialiased">
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children}
+            <CookieConsent />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -4,6 +4,7 @@ import { RedisService } from '../common/redis.service';
 import { MacroService } from './macro.service';
 import { TradeService } from './trade.service';
 import { EnergyService } from './energy.service';
+import { ConflictService } from './conflict.service';
 import { COUNTRY_HEALTH_METHODOLOGY } from './scoring.util';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -19,7 +20,19 @@ export class MacroController {
     private readonly redis: RedisService,
     private readonly trade: TradeService,
     private readonly energy: EnergyService,
+    private readonly conflict: ConflictService,
   ) {}
+
+  /** UCDP conflict-intensity series for one country: monthly events/deaths + trailing totals. */
+  @Get('conflict/:countryId')
+  async conflictSeries(@Param('countryId') countryId: string) {
+    const cacheKey = `macro:conflict:${countryId.toUpperCase()}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+    const result = await this.conflict.forCountry(countryId);
+    await this.redis.set(cacheKey, result, CACHE_TTL_SECONDS);
+    return result;
+  }
 
   /** Global energy benchmarks (Brent/WTI/Henry Hub): latest spot + 30-day change. */
   @Get('energy')
@@ -149,7 +162,14 @@ export class MacroAdminController {
     private readonly macro: MacroService,
     private readonly trade: TradeService,
     private readonly energy: EnergyService,
+    private readonly conflict: ConflictService,
   ) {}
+
+  /** Manually refresh UCDP conflict aggregates (normally weekly, Mondays 05:00). */
+  @Post('conflict-refresh')
+  conflictRefresh() {
+    return this.conflict.refresh();
+  }
 
   /** Manually refresh the energy benchmarks (normally daily at 05:30). */
   @Post('energy-refresh')

@@ -21,9 +21,11 @@ const NAV_LINKS: Array<{ label: string; href: string; value: EventCategory | nul
 
 interface NavbarProps {
   // Highlights the current section; null = the World front page.
-  active: EventCategory | null;
-  search: string;
-  onSearch: (q: string) => void;
+  active?: EventCategory | null;
+  search?: string;
+  // Omitted on static pages (About, Legal, Blog) — there's no story list to
+  // filter there, so the search field is hidden rather than rendered dead.
+  onSearch?: (q: string) => void;
 }
 
 function Icon({ path, label }: { path: string; label: string }) {
@@ -40,7 +42,7 @@ function Icon({ path, label }: { path: string; label: string }) {
  * off-canvas drawer opened by the burger. Backdrop-blurred, hairline
  * border, brand blue as the single accent.
  */
-export function Navbar({ active, search, onSearch }: NavbarProps) {
+export function Navbar({ active = null, search = '', onSearch }: NavbarProps) {
   const { user, canEdit } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -64,17 +66,19 @@ export function Navbar({ active, search, onSearch }: NavbarProps) {
         </span>
 
         <div className="ml-auto flex flex-1 items-center justify-end gap-1.5 sm:gap-2">
-          <div className="relative hidden w-full max-w-xs sm:block">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary">
-              <Icon label="Search" path="M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35" />
-            </span>
-            <input
-              value={search}
-              onChange={(e) => onSearch(e.target.value)}
-              placeholder="Search stories…"
-              className="w-full rounded-full border border-border/10 bg-bg-2 py-2 pl-9 pr-3 text-[13px] text-text-primary transition-colors placeholder:text-text-tertiary focus:border-brand focus:bg-bg focus:outline-none"
-            />
-          </div>
+          {onSearch && (
+            <div className="relative hidden w-full max-w-xs sm:block">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary">
+                <Icon label="Search" path="M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35" />
+              </span>
+              <input
+                value={search}
+                onChange={(e) => onSearch(e.target.value)}
+                placeholder="Search stories…"
+                className="w-full rounded-full border border-border/10 bg-bg-2 py-2 pl-9 pr-3 text-[13px] text-text-primary transition-colors placeholder:text-text-tertiary focus:border-brand focus:bg-bg focus:outline-none"
+              />
+            </div>
+          )}
 
           <button
             className="hidden h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-3 hover:text-brand-text sm:flex"
@@ -196,17 +200,19 @@ export function Navbar({ active, search, onSearch }: NavbarProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="relative mb-4">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary">
-                  <Icon label="Search" path="M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35" />
-                </span>
-                <input
-                  value={search}
-                  onChange={(e) => onSearch(e.target.value)}
-                  placeholder="Search stories…"
-                  className="w-full rounded-full border border-border/10 bg-bg-2 py-2.5 pl-9 pr-3 text-[14px] text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-                />
-              </div>
+              {onSearch && (
+                <div className="relative mb-4">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary">
+                    <Icon label="Search" path="M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35" />
+                  </span>
+                  <input
+                    value={search}
+                    onChange={(e) => onSearch(e.target.value)}
+                    placeholder="Search stories…"
+                    className="w-full rounded-full border border-border/10 bg-bg-2 py-2.5 pl-9 pr-3 text-[14px] text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+                  />
+                </div>
+              )}
 
               <nav className="flex flex-col">
                 {NAV_LINKS.map((c) => (

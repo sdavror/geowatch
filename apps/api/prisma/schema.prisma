@@ -90,6 +90,7 @@ model Country {
   economicIndicators EconomicIndicator[]
   sanctionRecords    SanctionRecord[]
   healthScores       CountryHealthScore[]
+  conflictMonths     ConflictMonth[]
   sources            Source[]
   tradeAsReporter    TradeFlow[]          @relation("tradeAsReporter")
   tradeAsPartner     TradeFlow[]          @relation("tradeAsPartner")
@@ -433,6 +434,28 @@ model PageView {
   @@map("page_views")
   @@index([entityType, entityId])
   @@index([viewedAt(sort: Desc)])
+}
+
+// Monthly per-country conflict intensity aggregated from UCDP GED events
+// (final annual dataset + monthly candidate releases). We store aggregates,
+// not raw events — the platform needs trend and magnitude, not incident
+// coordinates, and GED raw would be ~300k rows.
+model ConflictMonth {
+  id         String   @id @default(uuid()) @db.Uuid
+  countryId  String   @map("country_id") @db.Char(2)
+  country    Country  @relation(fields: [countryId], references: [id])
+  // First day of the month, UTC.
+  month      DateTime
+  events     Int
+  deaths     Int // UCDP "best" fatality estimates summed
+  stateBased Int      @map("state_based")
+  nonState   Int      @map("non_state")
+  oneSided   Int      @map("one_sided")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([countryId, month])
+  @@map("conflict_months")
+  @@index([month(sort: Desc)])
 }
 
 // Content snapshot for the editor's History panel. Written by the autosave
