@@ -295,6 +295,7 @@ export class ArticlesService {
     body?: string | null;
     aiSummary?: string | null;
     category?: string | null;
+    contentType?: string | null;
     countryId?: string | null;
     imageUrl?: string | null;
     published?: boolean;
@@ -311,6 +312,7 @@ export class ArticlesService {
         body: input.body ?? null,
         aiSummary: input.aiSummary ?? null,
         category: (input.category as never) ?? null,
+        contentType: (input.contentType as never) ?? null,
         countryId: input.countryId ? input.countryId.toUpperCase() : null,
         imageUrl: input.imageUrl ?? null,
         status,
@@ -338,6 +340,7 @@ export class ArticlesService {
       body?: string | null;
       aiSummary?: string | null;
       category?: string | null;
+      contentType?: string | null;
       countryId?: string | null;
       imageUrl?: string | null;
       published?: boolean;
@@ -391,6 +394,9 @@ export class ArticlesService {
         ...(input.body !== undefined ? { body: input.body } : {}),
         ...(input.aiSummary !== undefined ? { aiSummary: input.aiSummary } : {}),
         ...(input.category !== undefined ? { category: input.category as never } : {}),
+        ...(input.contentType !== undefined
+          ? { contentType: (input.contentType || null) as never }
+          : {}),
         ...(input.countryId !== undefined
           ? { countryId: input.countryId ? input.countryId.toUpperCase() : null }
           : {}),
@@ -585,6 +591,7 @@ export class ArticlesService {
       body: string | null;
       publishedAt: Date | null;
       category: string | null;
+      contentType?: string | null;
       tags: string[];
       aiSummary: string | null;
       sentimentScore: Prisma.Decimal | null;
@@ -614,6 +621,7 @@ export class ArticlesService {
       body: includeBody ? a.body : undefined,
       publishedAt: a.publishedAt?.toISOString() ?? null,
       category: a.category,
+      contentType: a.contentType ?? null,
       tags: a.tags,
       aiSummary: a.aiSummary,
       sentimentScore: a.sentimentScore ? Number(a.sentimentScore) : null,

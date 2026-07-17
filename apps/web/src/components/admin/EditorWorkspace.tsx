@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type {
   Article,
+  ArticleContentType,
   ArticleRevisionEntry,
   ArticleStatus,
   AssistMode,
@@ -11,7 +12,7 @@ import type {
   EventCategory,
   RelatedStory,
 } from '@geowatch/shared-types';
-import { ARTICLE_STATUS_LABEL, CATEGORY_LABEL } from '@geowatch/shared-types';
+import { ARTICLE_STATUS_LABEL, CATEGORY_LABEL, CONTENT_TYPE_LABEL } from '@geowatch/shared-types';
 import { authFetch, uploadImage, useAuth } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
 import { readingTimeMinutes } from '@/lib/readingTime';
@@ -21,6 +22,7 @@ import { StatusBadge } from './StatusBadge';
 import { ResearchPanel } from './ResearchPanel';
 
 const CATEGORIES: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
+const CONTENT_TYPES: ArticleContentType[] = ['analysis', 'opinion', 'exclusive', 'explainer', 'fact_check', 'live'];
 const STATUSES: ArticleStatus[] = ['idea', 'draft', 'in_review', 'ready', 'scheduled', 'published', 'archived'];
 const AUTOSAVE_DEBOUNCE_MS = 2_500;
 
@@ -37,6 +39,7 @@ interface DraftState {
   subtitle: string; // stored as aiSummary — the article's dek
   body: string;
   category: EventCategory;
+  contentType: ArticleContentType | '';
   countryId: string;
   tags: string; // comma-separated in the input
   imageUrl: string | null;
@@ -50,6 +53,7 @@ function stateFromArticle(a: Article | null): DraftState {
     subtitle: a?.aiSummary ?? '',
     body: a?.body ?? '',
     category: (a?.category as EventCategory) ?? 'political',
+    contentType: (a?.contentType as ArticleContentType) ?? '',
     countryId: a?.countryId ?? '',
     tags: (a?.tags ?? []).join(', '),
     imageUrl: a?.imageUrl ?? null,
@@ -64,6 +68,7 @@ function payloadFromState(s: DraftState) {
     aiSummary: s.subtitle.trim() || null,
     body: s.body || null,
     category: s.category,
+    contentType: s.contentType || '',
     countryId: s.countryId.trim() ? s.countryId.trim().toUpperCase() : null,
     imageUrl: s.imageUrl,
     tags: s.tags.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 12),
@@ -615,6 +620,21 @@ export function EditorWorkspace({ article, initial, onClose }: EditorWorkspacePr
                   {CATEGORIES.map((c) => (
                     <option key={c} value={c}>
                       {CATEGORY_LABEL[c]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-text-tertiary">Content type</span>
+                <select
+                  value={draft.contentType}
+                  onChange={(e) => setField('contentType', e.target.value as ArticleContentType | '')}
+                  className="rounded-lg border border-border/10 bg-bg px-2 py-1 text-caption text-text-primary focus:border-accent-blue focus:outline-none"
+                >
+                  <option value="">None (plain news)</option>
+                  {CONTENT_TYPES.map((c) => (
+                    <option key={c} value={c}>
+                      {CONTENT_TYPE_LABEL[c]}
                     </option>
                   ))}
                 </select>

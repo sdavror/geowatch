@@ -5,6 +5,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { mediaUrl } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { ContentTypeBadge } from './ContentTypeBadge';
 
 interface StoryCardProps {
   article: Article;
@@ -49,14 +50,17 @@ export function StoryCard({ article, onOpen, size = 'medium' }: StoryCardProps) 
           {article.country?.flagEmoji ?? '🌐'}
         </div>
         <div className="min-w-0 flex-1">
-          {cat && (
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider"
-              style={{ color: CATEGORY_COLOR[cat] }}
-            >
-              {CATEGORY_LABEL[cat]}
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ContentTypeBadge type={article.contentType} />
+            {cat && (
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: CATEGORY_COLOR[cat] }}
+              >
+                {CATEGORY_LABEL[cat]}
+              </span>
+            )}
+          </div>
           <h3 className="mt-0.5 line-clamp-2 text-[14px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
             {article.title}
           </h3>
@@ -94,14 +98,17 @@ export function StoryCard({ article, onOpen, size = 'medium' }: StoryCardProps) 
         )}
       </div>
       <div className="flex flex-1 flex-col p-4">
-        {cat && (
-          <span
-            className="text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: CATEGORY_COLOR[cat] }}
-          >
-            {CATEGORY_LABEL[cat]}
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ContentTypeBadge type={article.contentType} />
+          {cat && (
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: CATEGORY_COLOR[cat] }}
+            >
+              {CATEGORY_LABEL[cat]}
+            </span>
+          )}
+        </div>
         <h3 className="mt-1.5 text-[16px] font-semibold leading-snug text-text-primary transition-colors group-hover:text-brand-text">
           {article.title}
         </h3>

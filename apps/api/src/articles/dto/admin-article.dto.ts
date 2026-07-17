@@ -12,6 +12,7 @@ import {
 
 const CATEGORIES = ['military', 'economic', 'political', 'humanitarian'];
 const STATUSES = ['idea', 'draft', 'in_review', 'ready', 'scheduled', 'published', 'archived'];
+const CONTENT_TYPES = ['analysis', 'opinion', 'exclusive', 'explainer', 'fact_check', 'live'];
 
 export class CreateArticleDto {
   @IsString()
@@ -30,6 +31,10 @@ export class CreateArticleDto {
   @IsOptional()
   @IsIn(CATEGORIES)
   category?: string;
+
+  @IsOptional()
+  @IsIn(CONTENT_TYPES)
+  contentType?: string;
 
   @IsOptional()
   @IsString()
@@ -74,6 +79,12 @@ export class UpdateArticleDto {
   @IsOptional()
   @IsIn(CATEGORIES)
   category?: string;
+
+  // Empty string clears the content-type badge (same convention as scheduledAt below).
+  @IsOptional()
+  @ValidateIf((o: UpdateArticleDto) => o.contentType !== '')
+  @IsIn(CONTENT_TYPES)
+  contentType?: string;
 
   @IsOptional()
   @IsString()
