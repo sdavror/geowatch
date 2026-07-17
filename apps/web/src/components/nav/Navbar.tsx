@@ -7,6 +7,7 @@ import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/lib/auth';
 import { mediaUrl } from '@/lib/api';
+import { SearchDropdown } from './SearchDropdown';
 import type { EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_TO_SLUG, CATEGORY_NAV_LABEL, NAV_ORDER } from '@/lib/categories';
 
@@ -45,6 +46,8 @@ function Icon({ path, label }: { path: string; label: string }) {
 export function Navbar({ active = null, search = '', onSearch }: NavbarProps) {
   const { user, canEdit } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const showDropdown = searchFocused && search.trim().length >= 2;
 
   // Lock body scroll while the drawer is open.
   useEffect(() => {
@@ -74,9 +77,14 @@ export function Navbar({ active = null, search = '', onSearch }: NavbarProps) {
               <input
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
-                placeholder="Search stories…"
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                placeholder="Search stories, countries…"
                 className="w-full rounded-full border border-border/10 bg-bg-2 py-2 pl-9 pr-3 text-[13px] text-text-primary transition-colors placeholder:text-text-tertiary focus:border-brand focus:bg-bg focus:outline-none"
               />
+              {showDropdown && (
+                <SearchDropdown query={search} onNavigate={() => { onSearch(''); setSearchFocused(false); }} />
+              )}
             </div>
           )}
 

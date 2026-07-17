@@ -16,6 +16,23 @@ export class ArticlesService {
 
   async findAll(query: ListArticlesQueryDto) {
     const limit = query.limit ?? 20;
+
+    // Search results aren't cached (query space is unbounded) and skip
+    // source-diversity capping — a reader searching for a specific story
+    // wants the best title matches, not a mix of outlets.
+    if (query.q?.trim()) {
+      const rows = await this.prisma.article.findMany({
+        where: { published: true, title: { contains: query.q.trim(), mode: 'insensitive' } },
+        orderBy: { publishedAt: 'desc' },
+        take: limit,
+        include: {
+          country: true,
+          source: { select: { id: true, name: true, type: true, official: true } },
+        },
+      });
+      return rows.map((a) => this.serializeArticle(a));
+    }
+
     const cacheKey = `articles:all:${query.category ?? '*'}:${query.countryId ?? '*'}:${query.kind ?? '*'}:${limit}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return cached;

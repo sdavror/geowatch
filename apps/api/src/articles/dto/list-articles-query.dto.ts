@@ -18,6 +18,13 @@ export class ListArticlesQueryDto {
   @IsString()
   countryId?: string;
 
+  // Free-text title search — powers the navbar's global search dropdown.
+  // Bypasses source-diversity capping (that's a homepage-feed concern, not
+  // relevant to "find the story the reader typed").
+  @IsOptional()
+  @IsString()
+  q?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

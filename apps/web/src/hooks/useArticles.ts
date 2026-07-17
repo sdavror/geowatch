@@ -50,12 +50,14 @@ export function useArticles(filters?: {
   countryId?: string;
   limit?: number;
   kind?: 'editorial' | 'news';
+  q?: string;
 }) {
   const params = new URLSearchParams();
   if (filters?.category) params.set('category', filters.category);
   if (filters?.countryId) params.set('countryId', filters.countryId);
   if (filters?.limit) params.set('limit', String(filters.limit));
   if (filters?.kind) params.set('kind', filters.kind);
+  if (filters?.q) params.set('q', filters.q);
   const query = params.toString();
 
   const { data, error, isLoading } = useSWR<Article[]>(
@@ -76,6 +78,24 @@ export function useArticle(id: string | null) {
 
   return {
     article: data,
+    isLoading,
+    isError: !!error,
+  };
+}
+
+// Server-side title search for the navbar's global search dropdown — a
+// separate cache key from the feed queries above, no polling (searches
+// are transient), and only fires once the query is long enough to be
+// worth a request.
+export function useArticleSearch(query: string) {
+  const q = query.trim();
+  const { data, error, isLoading } = useSWR<Article[]>(
+    q.length >= 2 ? `/articles?q=${encodeURIComponent(q)}&limit=6` : null,
+    fetcher,
+  );
+
+  return {
+    results: data ?? [],
     isLoading,
     isError: !!error,
   };
