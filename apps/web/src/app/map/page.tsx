@@ -6,7 +6,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
 import dynamic from 'next/dynamic';
 import { useCountries, useCountry } from '@/hooks/useCountries';
-import { useMacroScores } from '@/hooks/useMacroScores';
+import { useMacroScores, useConflictSummary } from '@/hooks/useMacroScores';
 import { useMapStore } from '@/store/useMapStore';
 import { MapLegend } from '@/components/map/MapLegend';
 import { RegionFilterPanel } from '@/components/sidebar/RegionFilterPanel';
@@ -16,6 +16,7 @@ import { GdpIndicator } from '@/components/sidebar/GdpIndicator';
 import { PopulationIndicator } from '@/components/sidebar/PopulationIndicator';
 import { STATUS_COLOR, STATUS_LABEL } from '@geowatch/shared-types';
 import type { CountryStatus } from '@geowatch/shared-types';
+import type { MapColorMode } from '@/components/map/WorldMap';
 
 // react-simple-maps relies on browser globals (no SSR), so load it client-only.
 const WorldMap = dynamic(
@@ -24,6 +25,12 @@ const WorldMap = dynamic(
 );
 
 const STATUS_ORDER: CountryStatus[] = ['conflict', 'crisis', 'unstable', 'stable'];
+
+const LAYER_OPTIONS: Array<{ mode: MapColorMode; label: string }> = [
+  { mode: 'stability', label: 'Stability' },
+  { mode: 'health', label: 'Country Health' },
+  { mode: 'conflict', label: 'Conflict' },
+];
 
 export default function MapPage() {
   const {
@@ -46,7 +53,9 @@ export default function MapPage() {
   });
   const { country: selectedCountry } = useCountry(selectedCountryId);
   const { scores: macroScores } = useMacroScores();
+  const { summary: conflictSummary } = useConflictSummary();
   const [search, setSearch] = useState('');
+  const [colorMode, setColorMode] = useState<MapColorMode>('stability');
 
   const visibleCountries = search
     ? filteredCountries.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
@@ -105,9 +114,28 @@ export default function MapPage() {
             selectedCountryId={selectedCountryId}
             onSelectCountry={selectCountry}
             macroScores={macroScores}
+            conflictSummary={conflictSummary}
+            colorMode={colorMode}
           />
 
-          <MapLegend />
+          {/* Layer switcher — top center, matches the map-page control style */}
+          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-1 rounded-full border border-border/10 bg-bg-2/60 p-1 shadow-lg backdrop-blur-xl">
+            {LAYER_OPTIONS.map((opt) => (
+              <button
+                key={opt.mode}
+                onClick={() => setColorMode(opt.mode)}
+                className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  colorMode === opt.mode
+                    ? 'bg-brand text-white'
+                    : 'text-text-secondary hover:text-brand-text'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <MapLegend mode={colorMode} />
 
           {/* Stats */}
           <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">

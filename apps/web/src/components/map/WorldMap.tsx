@@ -5,15 +5,19 @@ import maplibregl from 'maplibre-gl';
 import type { MapLayerMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { feature } from 'topojson-client';
-import type { Country, MacroScoreEntry } from '@geowatch/shared-types';
+import type { Country, MacroScoreEntry, ConflictSummaryEntry } from '@geowatch/shared-types';
 import { STATUS_COLOR } from '@geowatch/shared-types';
 import { NUMERIC_TO_ALPHA2 } from '@/lib/isoNumericMap';
+
+export type MapColorMode = 'stability' | 'health' | 'conflict';
 
 interface WorldMapProps {
   countries: Country[];
   selectedCountryId: string | null;
   onSelectCountry: (id: string) => void;
   macroScores?: MacroScoreEntry[];
+  conflictSummary?: ConflictSummaryEntry[];
+  colorMode?: MapColorMode;
 }
 
 // We render our OWN country layer from the visionscarto world-atlas data
@@ -145,18 +149,67 @@ function isLightTheme(): boolean {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('light');
 }
 
-// Builds the fill-color match expression: each tracked country's numeric
-// ISO code → its status colour; untracked land → theme-aware neutral fill.
-function buildFillColor(countries: Country[]): maplibregl.ExpressionSpecification {
+// Same green/amber/red convention used by the hover popup's Country Health
+// line and by STATUS_COLOR — kept consistent across every map layer rather
+// than inventing a new palette per mode.
+function healthColor(value: number): string {
+  return value >= 60 ? '#3ecf8e' : value >= 40 ? '#e8b84a' : '#e84545';
+}
+
+// Trailing-12m summary line shown only when the conflict layer is active —
+// on other layers this number would be a non-sequitur next to GDP/health.
+function conflictPopupHtml(summary: ConflictSummaryEntry | undefined): string {
+  if (!summary || summary.events === 0) {
+    return (
+      `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">` +
+      `No recorded conflict events (12m)</div>`
+    );
+  }
+  return (
+    `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">` +
+    `${summary.events.toLocaleString('en-US')} events · ${summary.deaths.toLocaleString('en-US')} deaths (12m)</div>`
+  );
+}
+
+// Trailing-12m event counts span orders of magnitude (0 for most countries,
+// thousands for an active war) — three buckets read as "none / some /
+// heavy" rather than a washed-out linear gradient dominated by outliers.
+function conflictColor(events: number): string {
+  return events >= 50 ? '#e84545' : events > 0 ? '#e8b84a' : '#3a4150';
+}
+
+// Builds the fill-color match expression for the given layer: each tracked
+// country's numeric ISO code → a colour from that layer's data; untracked
+// land (or a country with no data for this layer) → theme-aware neutral.
+function buildFillColor(
+  countries: Country[],
+  mode: MapColorMode,
+  macroScores?: MacroScoreEntry[],
+  conflictSummary?: ConflictSummaryEntry[],
+): maplibregl.ExpressionSpecification {
   const untracked = isLightTheme() ? UNTRACKED_LAND_LIGHT : UNTRACKED_LAND_DARK;
   const alpha2ToNumeric = new Map<string, string>();
   for (const [num, a2] of Object.entries(NUMERIC_TO_ALPHA2)) alpha2ToNumeric.set(a2, num);
+
+  const healthById = new Map((macroScores ?? []).map((s) => [s.countryId, s.value]));
+  const conflictById = new Map((conflictSummary ?? []).map((s) => [s.countryId, s.events]));
 
   const stops: string[] = [];
   for (const c of countries) {
     const num = alpha2ToNumeric.get(c.id);
     if (!num) continue;
-    stops.push(num, STATUS_COLOR[c.status]);
+
+    let color: string | undefined;
+    if (mode === 'stability') {
+      color = STATUS_COLOR[c.status];
+    } else if (mode === 'health') {
+      const v = healthById.get(c.id);
+      color = v !== undefined ? healthColor(v) : undefined;
+    } else {
+      const events = conflictById.get(c.id) ?? 0;
+      color = conflictColor(events);
+    }
+    if (color) stops.push(num, color);
   }
   if (stops.length === 0) {
     return ['literal', untracked] as unknown as maplibregl.ExpressionSpecification;
@@ -179,7 +232,14 @@ function conflictNumerics(countries: Country[]): string[] {
     .filter((n): n is string => Boolean(n));
 }
 
-export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroScores }: WorldMapProps) {
+export function WorldMap({
+  countries,
+  selectedCountryId,
+  onSelectCountry,
+  macroScores,
+  conflictSummary,
+  colorMode = 'stability',
+}: WorldMapProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<InstanceType<typeof maplibregl.Map> | null>(null);
   const loadedRef = useRef(false);
@@ -190,9 +250,13 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
   const countriesRef = useRef(countries);
   const onSelectRef = useRef(onSelectCountry);
   const macroScoresRef = useRef(macroScores);
+  const conflictSummaryRef = useRef(conflictSummary);
+  const colorModeRef = useRef(colorMode);
   countriesRef.current = countries;
   onSelectRef.current = onSelectCountry;
   macroScoresRef.current = macroScores;
+  conflictSummaryRef.current = conflictSummary;
+  colorModeRef.current = colorMode;
 
   // --- Init map once. ------------------------------------------------------
   useEffect(() => {
@@ -238,7 +302,12 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
         type: 'fill',
         source: 'world',
         paint: {
-          'fill-color': buildFillColor(countriesRef.current),
+          'fill-color': buildFillColor(
+            countriesRef.current,
+            colorModeRef.current,
+            macroScoresRef.current,
+            conflictSummaryRef.current,
+          ),
           'fill-opacity': 0.92,
         },
       });
@@ -383,11 +452,13 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
         }
         const gdp = country.gdpUsd !== null ? ` · ${formatGdpShort(country.gdpUsd)}` : '';
         const score = macroScoresRef.current?.find((s) => s.countryId === country.id);
+        const conflict = conflictSummaryRef.current?.find((s) => s.countryId === country.id);
         const html =
           `<div style="font:600 13px var(--font-inter),system-ui;color:rgb(var(--color-text-primary));">${country.name}</div>` +
           `<div style="font:12px var(--font-inter),system-ui;color:rgb(var(--color-text-secondary));">${country.status}${gdp}</div>` +
           populationPopupHtml(country) +
-          macroScorePopupHtml(score);
+          macroScorePopupHtml(score) +
+          (colorModeRef.current === 'conflict' ? conflictPopupHtml(conflict) : '');
         if (!popupRef.current) {
           popupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         }
@@ -412,11 +483,18 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Recolour when countries / statuses change.
+  // Recolour when countries / statuses / active layer / layer data change.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !map.getLayer('countries-fill')) return;
-    map.setPaintProperty('countries-fill', 'fill-color', buildFillColor(countries));
+    map.setPaintProperty(
+      'countries-fill',
+      'fill-color',
+      buildFillColor(countries, colorMode, macroScores, conflictSummary),
+    );
+    // The conflict glow always reflects live status, independent of which
+    // choropleth layer is active — it's "this country is at war right now",
+    // not a property of the selected layer.
     const cn = conflictNumerics(countries);
     const conflictFilter =
       cn.length > 0
@@ -425,7 +503,7 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
     for (const id of ['conflict-glow-outer', 'conflict-glow-mid', 'conflict-glow-core']) {
       if (map.getLayer(id)) map.setFilter(id, conflictFilter);
     }
-  }, [countries]);
+  }, [countries, colorMode, macroScores, conflictSummary]);
 
   // Re-tint untracked land when the light/dark theme toggles (the fill is a
   // baked expression MapLibre can't recompute from CSS on its own).
@@ -437,7 +515,7 @@ export function WorldMap({ countries, selectedCountryId, onSelectCountry, macroS
       map.setPaintProperty(
         'countries-fill',
         'fill-color',
-        buildFillColor(countriesRef.current),
+        buildFillColor(countriesRef.current, colorModeRef.current, macroScoresRef.current, conflictSummaryRef.current),
       );
     });
     observer.observe(html, { attributes: true, attributeFilter: ['class'] });
