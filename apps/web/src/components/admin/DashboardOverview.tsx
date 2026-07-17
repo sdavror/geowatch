@@ -33,6 +33,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { key: 'macro', label: 'Refresh macro data', hint: 'World Bank + IMF + sanctions + Country Health', path: '/admin/macro/refresh' },
   { key: 'trade', label: 'Refresh trade data', hint: 'UN Comtrade — runs in background, ~20-30 min', path: '/admin/macro/trade-refresh' },
   { key: 'energy', label: 'Refresh energy data', hint: 'EIA Brent/WTI/Henry Hub spot prices', path: '/admin/macro/energy-refresh' },
+  { key: 'conflict', label: 'Refresh conflict data', hint: 'UCDP GED events → monthly per-country intensity', path: '/admin/macro/conflict-refresh' },
   { key: 'purge', label: 'Purge stale drafts', hint: 'Delete unreviewed ingested stories >14 days old', path: '/admin/sources/purge-stale' },
 ];
 

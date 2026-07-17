@@ -34,6 +34,8 @@ interface CountryContext {
   officialStatements: Array<{ title: string; url: string; publishedAt: Date | null; source: { name: string } | null }>;
   mediaReports: Array<{ title: string; url: string; publishedAt: Date | null; source: { name: string } | null }>;
   tradePartners: Array<{ partnerName: string; flow: string; year: number; valueUsd: bigint }>;
+  // UCDP GED aggregates; null when no recorded events in the window.
+  conflict: { events12m: number; deaths12m: number; events3m: number; deaths3m: number } | null;
 }
 
 const fmtDate = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : 'undated');
@@ -148,6 +150,14 @@ export class AnalysisService {
           });
         }
       }
+      if (ctx.conflict) {
+        facts.push({
+          label: 'Conflict events / fatalities',
+          value: `${ctx.conflict.events12m} events, ~${ctx.conflict.deaths12m} deaths (12m); ${ctx.conflict.events3m} events, ~${ctx.conflict.deaths3m} deaths (last 3m)`,
+          period: 'trailing 12 months',
+          source: 'UCDP GED',
+        });
+      }
 
       return {
         countryId: ctx.country.id,
@@ -250,6 +260,22 @@ export class AnalysisService {
       }),
     ]);
 
+    // UCDP conflict intensity: trailing 12 months vs the 3 most recent —
+    // level and direction in two numbers each.
+    const conflictRows = await this.prisma.conflictMonth.findMany({
+      where: { countryId: id, month: { gte: new Date(Date.now() - 366 * 86400_000) } },
+      orderBy: { month: 'desc' },
+    });
+    const conflict =
+      conflictRows.length > 0
+        ? {
+            events12m: conflictRows.reduce((s, r) => s + r.events, 0),
+            deaths12m: conflictRows.reduce((s, r) => s + r.deaths, 0),
+            events3m: conflictRows.slice(0, 3).reduce((s, r) => s + r.events, 0),
+            deaths3m: conflictRows.slice(0, 3).reduce((s, r) => s + r.deaths, 0),
+          }
+        : null;
+
     // Top-5 per flow is plenty for the prompt — trade concentration, not
     // the full partner list, is what spillover reasoning needs.
     const latestTradeYear = tradeFlows[0]?.year;
@@ -262,7 +288,7 @@ export class AnalysisService {
       valueUsd: t.valueUsd,
     }));
 
-    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners };
+    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners, conflict };
   }
 
   /**
@@ -341,6 +367,12 @@ export class AnalysisService {
     if (ctx.riskHistory) {
       lines.push(`- Conflict/stability risk score: ${Number(ctx.riskHistory.score).toFixed(1)}/10, status: ${ctx.country.status}.`);
     }
+    if (ctx.conflict) {
+      lines.push(
+        `- Recorded conflict events (UCDP GED, actual): ${ctx.conflict.events12m} events with ~${ctx.conflict.deaths12m} fatalities over the trailing 12 months; ` +
+          `${ctx.conflict.events3m} events with ~${ctx.conflict.deaths3m} fatalities in the last 3 months (recent months are provisional candidate data).`,
+      );
+    }
     if (ctx.tradePartners.length > 0) {
       const year = ctx.tradePartners[0].year;
       const fmtBn = (v: bigint) => `$${(Number(v) / 1e9).toFixed(1)}bn`;
@@ -394,6 +426,7 @@ export class AnalysisService {
     if (ctx.indicators.some((i) => i.isForecast)) cites.push('IMF World Economic Outlook (forecasts)');
     if (ctx.sanctions) cites.push('OpenSanctions');
     if (ctx.tradePartners.length > 0) cites.push('UN Comtrade (bilateral trade data)');
+    if (ctx.conflict) cites.push('UCDP Georeferenced Event Dataset (conflict events and fatalities)');
     if (ctx.recentArticles.length > 0) cites.push('Apolitics published coverage');
     // Statements and media reports cite the concrete item with its URL —
     // "US State Department (official statement)" alone gives a journalist

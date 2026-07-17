@@ -59,6 +59,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       EIA_API_KEY: ${EIA_API_KEY:-}
+      UCDP_API_TOKEN: ${UCDP_API_TOKEN:-}
     ports:
       - '4000:4000'
     networks:
