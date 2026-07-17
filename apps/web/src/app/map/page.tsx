@@ -153,6 +153,12 @@ export default function MapPage() {
                 <PopulationIndicator countryId={selectedCountry.id} />
                 <GdpIndicator gdpUsd={selectedCountry.gdpUsd} />
               </div>
+              <Link
+                href={`/country/${selectedCountry.id}`}
+                className="mt-3 block border-t border-border/10 pt-2.5 text-center text-[11px] font-medium text-brand-text hover:underline"
+              >
+                Full country profile ›
+              </Link>
             </div>
           )}
         </div>

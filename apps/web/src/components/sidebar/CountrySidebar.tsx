@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCountry } from '@/hooks/useCountries';
 import { StatusBadge } from './StatusBadge';
 import { RiskScoreBar } from './RiskScoreBar';
@@ -58,8 +59,14 @@ export function CountrySidebar({ countryId, onClose }: CountrySidebarProps) {
               {country.region} · Capital: {country.capital}
             </p>
 
-            <div className="mb-4">
+            <div className="mb-4 flex items-center justify-between">
               <StatusBadge status={country.status} />
+              <Link
+                href={`/country/${country.id}`}
+                className="text-[11px] font-medium text-brand-text hover:underline"
+              >
+                Full profile ›
+              </Link>
             </div>
 
             <div className="mb-4">

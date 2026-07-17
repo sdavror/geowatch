@@ -40,11 +40,7 @@ export default function HomePage() {
 
   const openArticle = (article: Article) => router.push(`/news/${article.id}`);
 
-  const handleSelectCountry = (countryId: string) => {
-    const match = articles.find((a) => a.countryId === countryId);
-    if (match) openArticle(match);
-    else router.push('/map');
-  };
+  const handleSelectCountry = (countryId: string) => router.push(`/country/${countryId}`);
 
   // The World front page shows every section; search narrows the whole pool
   // by title. Drilling into a single category uses /category/[slug].
