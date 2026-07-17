@@ -23,6 +23,17 @@ export class MacroController {
     private readonly conflict: ConflictService,
   ) {}
 
+  /** Trailing-12m conflict totals for every country — powers the map's conflict layer. */
+  @Get('conflict-summary')
+  async conflictSummary() {
+    const cacheKey = 'macro:conflict-summary';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached;
+    const result = await this.conflict.summary();
+    await this.redis.set(cacheKey, result, CACHE_TTL_SECONDS);
+    return result;
+  }
+
   /** UCDP conflict-intensity series for one country: monthly events/deaths + trailing totals. */
   @Get('conflict/:countryId')
   async conflictSeries(@Param('countryId') countryId: string) {

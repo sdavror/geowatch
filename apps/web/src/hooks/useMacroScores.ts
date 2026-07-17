@@ -8,6 +8,7 @@ import type {
   TradePartnersResponse,
   CountryScoreResponse,
   ConflictSeriesResponse,
+  ConflictSummaryEntry,
 } from '@geowatch/shared-types';
 
 // The score refreshes at most once a day server-side — no need for a
@@ -74,6 +75,21 @@ export function useCountryScore(countryId: string | null) {
     // A 404 means this country has <50% indicator coverage and was
     // deliberately skipped rather than scored on mostly-missing data.
     isError: false,
+  };
+}
+
+// All-countries conflict totals — powers the map's conflict layer.
+export function useConflictSummary() {
+  const { data, error, isLoading } = useSWR<ConflictSummaryEntry[]>(
+    '/macro/conflict-summary',
+    fetcher,
+    { refreshInterval: 30 * 60_000 },
+  );
+
+  return {
+    summary: data ?? [],
+    isLoading,
+    isError: !!error,
   };
 }
 

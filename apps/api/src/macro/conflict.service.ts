@@ -132,6 +132,26 @@ export class ConflictService {
     };
   }
 
+  /**
+   * Trailing-12m event/death totals for every country with any recorded
+   * conflict activity, in one query — powers the map's conflict-intensity
+   * layer (a per-country /conflict/:id call for all ~200 countries would be
+   * needlessly chatty when the map just needs a single choropleth pass).
+   */
+  async summary() {
+    const rows = await this.prisma.conflictMonth.findMany({
+      where: { month: { gte: new Date(Date.now() - 366 * 86400_000) } },
+    });
+    const byCountry = new Map<string, { events: number; deaths: number }>();
+    for (const r of rows) {
+      const acc = byCountry.get(r.countryId) ?? { events: 0, deaths: 0 };
+      acc.events += r.events;
+      acc.deaths += r.deaths;
+      byCountry.set(r.countryId, acc);
+    }
+    return [...byCountry.entries()].map(([countryId, totals]) => ({ countryId, ...totals }));
+  }
+
   /** Monthly series + trailing totals for one country — public endpoint + analysis context. */
   async forCountry(countryId: string) {
     const id = countryId.toUpperCase();

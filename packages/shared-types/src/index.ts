@@ -228,6 +228,15 @@ export interface ConflictSeriesResponse {
   trailing12m: { events: number; deaths: number };
 }
 
+// Per-country trailing-12m totals for every country with recorded
+// activity — served by GET /macro/conflict-summary, powers the map's
+// conflict-intensity layer (one call instead of ~200 per-country ones).
+export interface ConflictSummaryEntry {
+  countryId: string;
+  events: number;
+  deaths: number;
+}
+
 // Global energy benchmark (Brent/WTI/Henry Hub spot), latest value + 30-day
 // change. Series is not per-country — these are world reference prices.
 // Served by GET /macro/energy.
