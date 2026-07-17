@@ -127,25 +127,28 @@ export default function HomePage() {
 
             {/* Editorial sidebar */}
             <aside className="flex flex-col gap-6 lg:sticky lg:top-[104px] lg:h-fit">
+              {/* Highest-signal first: the map is the site's own data
+                  product, so it leads the sidebar rather than sitting
+                  below generic ranked lists. */}
               <RiskSidebar
                 countries={countries}
                 onSelectCountry={handleSelectCountry}
                 onOpenFullMap={() => router.push('/map')}
               />
 
-              {/* Most read needs real traffic to be meaningful — stays
-                  hidden rather than showing a near-empty ranked list. */}
-              {mostRead.length >= 3 && (
-                <RankedList title="Most read" articles={mostRead} onOpen={openArticle} />
-              )}
-
-              <RankedList title="Latest updates" articles={latest} onOpen={openArticle} />
-
               <CountryHealthWidget scores={macroScores} />
 
               <MarketsWidget countries={countries} />
 
               <EnergyWidget />
+
+              <RankedList title="Latest updates" articles={latest} onOpen={openArticle} />
+
+              {/* Most read needs real traffic to be meaningful — stays
+                  hidden rather than showing a near-empty ranked list. */}
+              {mostRead.length >= 3 && (
+                <RankedList title="Most read" articles={mostRead} onOpen={openArticle} />
+              )}
 
               <Newsletter />
             </aside>
@@ -186,15 +189,15 @@ function ArticlesNewsSplit({
             <h2 className="text-h2 text-text-primary">Analysis</h2>
             <span className="text-caption text-text-tertiary">written by the Apolitics newsroom</span>
           </div>
-          <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={staggerContainer}
-            className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            {editorial.slice(0, 6).map((a) => (
-              <StoryCard key={a.id} article={a} onOpen={onOpen} />
-            ))}
+          <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="flex flex-col gap-4">
+            {editorial[0] && <StoryCard article={editorial[0]} onOpen={onOpen} size="medium" />}
+            {editorial.length > 1 && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {editorial.slice(1, 6).map((a) => (
+                  <StoryCard key={a.id} article={a} onOpen={onOpen} size="compact" />
+                ))}
+              </div>
+            )}
           </motion.div>
         </section>
       )}
