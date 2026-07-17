@@ -2,12 +2,16 @@
 
 import useSWR from 'swr';
 import { fetcher, API_BASE_URL } from '@/lib/api';
+import { getConsent } from '@/lib/consent';
 import type { Article } from '@geowatch/shared-types';
 
 const VIEWED_SESSION_KEY = 'apolitics-session-id';
 
-function sessionId(): string {
-  if (typeof window === 'undefined') return '';
+// Session id (and thus per-reader stats) only exists with analytics
+// consent. Without it, views still count in aggregate — no identifier.
+function sessionId(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (getConsent() !== 'all') return null;
   let id = window.localStorage.getItem(VIEWED_SESSION_KEY);
   if (!id) {
     id = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -25,7 +29,7 @@ export function recordArticleView(articleId: string) {
   // query-string PII, and "Traffic sources" only needs the domain.
   let referrer: string | null = null;
   try {
-    if (document.referrer) {
+    if (getConsent() === 'all' && document.referrer) {
       const host = new URL(document.referrer).hostname;
       if (host && host !== window.location.hostname) referrer = host;
     }
