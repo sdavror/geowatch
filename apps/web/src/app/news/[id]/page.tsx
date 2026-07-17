@@ -12,6 +12,7 @@ import { CommentsSection } from '@/components/articles/CommentsSection';
 import { ArticleBody } from '@/components/article/ArticleBody';
 import { RelatedStories } from '@/components/article/RelatedStories';
 import { ShareBar } from '@/components/article/ShareBar';
+import { ContentTypeBadge } from '@/components/article/ContentTypeBadge';
 import { Logo } from '@/components/Logo';
 import { Footer } from '@/components/nav/Footer';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -59,15 +60,18 @@ export default function NewsDetailPage() {
 
         {article && (
           <>
-            {cat && (
-              <Link
-                href="/"
-                className="text-[12px] font-semibold uppercase tracking-wider"
-                style={{ color: CATEGORY_COLOR[cat] }}
-              >
-                {CATEGORY_LABEL[cat]}
-              </Link>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <ContentTypeBadge type={article.contentType} />
+              {cat && (
+                <Link
+                  href="/"
+                  className="text-[12px] font-semibold uppercase tracking-wider"
+                  style={{ color: CATEGORY_COLOR[cat] }}
+                >
+                  {CATEGORY_LABEL[cat]}
+                </Link>
+              )}
+            </div>
             <h1 className="mt-3 text-[34px] font-bold leading-[1.15] tracking-tight text-text-primary sm:text-[42px]">
               {article.title}
             </h1>

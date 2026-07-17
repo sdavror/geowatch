@@ -4,6 +4,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import { mediaUrl } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { ContentTypeBadge } from '@/components/article/ContentTypeBadge';
 
 interface HeroProps {
   lead: Article;
@@ -52,7 +53,10 @@ export function Hero({ lead, secondary, onOpen }: HeroProps) {
           )}
         </div>
         <div className="mt-4">
-          <CategoryTag category={lead.category} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ContentTypeBadge type={lead.contentType} />
+            <CategoryTag category={lead.category} />
+          </div>
           <h2 className="mt-2 text-3xl font-bold leading-[1.15] tracking-tight text-text-primary transition-colors group-hover:text-brand-text sm:text-[34px]">
             {lead.title}
           </h2>
@@ -75,7 +79,10 @@ export function Hero({ lead, secondary, onOpen }: HeroProps) {
             onClick={() => onOpen(a)}
             className="group py-4 text-left first:pt-0"
           >
-            <CategoryTag category={a.category} />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ContentTypeBadge type={a.contentType} />
+              <CategoryTag category={a.category} />
+            </div>
             <h3 className="mt-1.5 text-[18px] font-semibold leading-snug text-text-primary transition-colors group-hover:text-brand-text">
               {a.title}
             </h3>

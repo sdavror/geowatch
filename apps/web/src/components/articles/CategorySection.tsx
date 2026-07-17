@@ -5,6 +5,7 @@ import type { Article, EventCategory } from '@geowatch/shared-types';
 import { ArticleCard } from './ArticleCard';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { mediaUrl } from '@/lib/api';
+import { ContentTypeBadge } from '@/components/article/ContentTypeBadge';
 
 interface CategorySectionProps {
   category: EventCategory;
@@ -65,6 +66,11 @@ export function CategorySection({
           </div>
         )}
         <div className="min-w-0 flex-1">
+          {featured.contentType && (
+            <div className="mb-1">
+              <ContentTypeBadge type={featured.contentType} />
+            </div>
+          )}
           <div className="text-[15px] font-semibold leading-snug text-text-primary">
             {featured.title}
           </div>

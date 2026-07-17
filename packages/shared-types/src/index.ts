@@ -39,6 +39,35 @@ export const ARTICLE_STATUS_LABEL: Record<ArticleStatus, string> = {
 
 export type TaskPriority = 'urgent' | 'high' | 'normal';
 
+// Editorial framing badge, distinct from `category` (topic) and `kind`
+// (editorial vs wire, derived from authorId/sourceId, not stored). A wire
+// story stays null — only newsroom-tagged pieces get a badge.
+export type ArticleContentType =
+  | 'analysis'
+  | 'opinion'
+  | 'exclusive'
+  | 'explainer'
+  | 'fact_check'
+  | 'live';
+
+export const CONTENT_TYPE_LABEL: Record<ArticleContentType, string> = {
+  analysis: 'Analysis',
+  opinion: 'Opinion',
+  exclusive: 'Exclusive',
+  explainer: 'Explainer',
+  fact_check: 'Fact Check',
+  live: 'Live',
+};
+
+export const CONTENT_TYPE_COLOR: Record<ArticleContentType, string> = {
+  analysis: '#2563EB',
+  opinion: '#8b5cf6',
+  exclusive: '#e84545',
+  explainer: '#0ea5a4',
+  fact_check: '#f28c2a',
+  live: '#e84545',
+};
+
 // ─────────────────────────────────────────────
 // Country
 // ─────────────────────────────────────────────
@@ -286,6 +315,7 @@ export interface Article {
   publishedAt: string | null;
   language?: string;
   category: EventCategory | null;
+  contentType?: ArticleContentType | null;
   tags: string[];
   aiSummary: string | null;
   aiSummaryApproved?: boolean;

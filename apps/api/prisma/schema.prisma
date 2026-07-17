@@ -55,6 +55,20 @@ enum ArticleStatus {
   archived
 }
 
+// Editorial framing shown as a badge on cards — distinct from `kind`
+// (editorial vs wire, derived from authorId/sourceId): a wire story stays
+// null (plain "News"), an editorial piece can additionally be tagged as
+// one of these so a reader can tell analysis from breaking coverage from
+// opinion at a glance, per the homepage-hierarchy review.
+enum ArticleContentType {
+  analysis
+  opinion
+  exclusive
+  explainer
+  fact_check
+  live
+}
+
 enum TaskPriority {
   urgent
   high
@@ -310,6 +324,7 @@ model Article {
   publishedAt            DateTime? @map("published_at")
   language               String    @default("en") @db.Char(2)
   category               EventCategory?
+  contentType            ArticleContentType? @map("content_type")
   tags                   String[]  @default([])
   aiSummary              String?   @map("ai_summary")
   aiSummaryApproved      Boolean   @default(false) @map("ai_summary_approved")

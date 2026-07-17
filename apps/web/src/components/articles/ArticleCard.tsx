@@ -3,6 +3,7 @@
 import { CATEGORY_LABEL, CATEGORY_COLOR } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
+import { ContentTypeBadge } from '@/components/article/ContentTypeBadge';
 
 interface ArticleCardProps {
   article: Article;
@@ -19,14 +20,17 @@ export function ArticleCard({ article, onSelect }: ArticleCardProps) {
         {article.country?.flagEmoji ?? '🌐'}
       </div>
       <div className="min-w-0 flex-1">
-        {article.category && (
-          <span
-            className="text-[11px] font-medium"
-            style={{ color: CATEGORY_COLOR[article.category as EventCategory] }}
-          >
-            {CATEGORY_LABEL[article.category as EventCategory]?.toUpperCase()}
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ContentTypeBadge type={article.contentType} />
+          {article.category && (
+            <span
+              className="text-[11px] font-medium"
+              style={{ color: CATEGORY_COLOR[article.category as EventCategory] }}
+            >
+              {CATEGORY_LABEL[article.category as EventCategory]?.toUpperCase()}
+            </span>
+          )}
+        </div>
         <div className="mt-0.5 line-clamp-2 text-[14px] font-medium leading-snug text-text-primary">
           {article.title}
         </div>
