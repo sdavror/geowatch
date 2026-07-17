@@ -225,13 +225,22 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, chrom
   return (
     <div className="flex min-h-screen bg-bg">
       {/* ── Sidebar ─────────────────────────────────────── */}
-      <aside className="flex h-screen w-60 flex-shrink-0 flex-col bg-slate-950 px-3 py-4 text-slate-300">
-        <Link href="/admin" className="mb-4 flex items-center gap-2.5 px-2">
+      <aside className="flex h-screen w-60 flex-shrink-0 flex-col bg-slate-950 px-3 py-4 text-slate-200">
+        <Link href="/admin" className="mb-3 flex items-center gap-2.5 px-2">
           <Mark size={24} />
           <span>
             <span className="block text-[15px] font-semibold leading-tight text-white">Apolitics</span>
-            <span className="block text-[10px] leading-tight text-slate-500">editorial workspace</span>
+            <span className="block text-[10px] leading-tight text-slate-400">editorial workspace</span>
           </span>
+        </Link>
+
+        {/* Prominent exit to the public site — pinned at the top where it
+            can't be missed, brand-tinted so it reads as an action. */}
+        <Link
+          href="/"
+          className="mb-4 flex items-center justify-center gap-2 rounded-xl border border-brand/40 bg-brand/15 px-3 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand/30"
+        >
+          ← Back to site
         </Link>
 
         <nav className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
@@ -240,7 +249,7 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, chrom
             if (items.length === 0) return null;
             return (
               <div key={group.title}>
-                <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                   {group.title}
                 </div>
                 <div className="flex flex-col gap-px">
@@ -271,10 +280,7 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, chrom
               />
             ))}
           </div>
-          <Link href="/" className="mb-2 mt-1 block px-2.5 text-[11px] text-slate-500 hover:text-white">
-            ← Back to site
-          </Link>
-          <div className="flex items-center gap-2.5 rounded-xl bg-slate-900 px-2.5 py-2">
+          <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-slate-900 px-2.5 py-2">
             <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-[12px] font-semibold text-white">
               {avatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -285,16 +291,15 @@ export function AdminShell({ section, onSelectSection, onCreate, onSearch, chrom
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-medium text-white">{displayName}</div>
-              <div className="truncate text-[10px] capitalize text-slate-500">{user.role}</div>
+              <div className="truncate text-[10px] capitalize text-slate-400">{user.role}</div>
             </div>
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="flex-shrink-0 text-[13px] text-slate-500 hover:text-white"
-            >
-              ⏻
-            </button>
           </div>
+          <button
+            onClick={logout}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[12px] font-medium text-red-300 transition-colors hover:bg-red-500/20 hover:text-red-200"
+          >
+            ⏻ Sign out
+          </button>
         </div>
       </aside>
 
