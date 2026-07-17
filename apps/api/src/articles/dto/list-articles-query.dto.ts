@@ -8,6 +8,12 @@ export class ListArticlesQueryDto {
   @IsIn(CATEGORY_VALUES)
   category?: (typeof CATEGORY_VALUES)[number];
 
+  // 'editorial' = written in our newsroom (has an author) — analyses and
+  // features; 'news' = ingested from external sources (wire/official/TG).
+  @IsOptional()
+  @IsIn(['editorial', 'news'])
+  kind?: 'editorial' | 'news';
+
   @IsOptional()
   @IsString()
   countryId?: string;

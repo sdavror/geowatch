@@ -16,7 +16,8 @@ import { Newsletter } from '@/components/home/Newsletter';
 import { MarketsWidget } from '@/components/home/MarketsWidget';
 import { CountryHealthWidget } from '@/components/home/CountryHealthWidget';
 import { EnergyWidget } from '@/components/home/EnergyWidget';
-import { WeatherWidget } from '@/components/home/WeatherWidget';
+import { StoryCard, staggerContainer } from '@/components/article/StoryCard';
+import { motion } from 'framer-motion';
 import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { CATEGORY_COLOR, CATEGORY_LABEL } from '@geowatch/shared-types';
 import type { Article, EventCategory } from '@geowatch/shared-types';
@@ -30,6 +31,10 @@ export default function HomePage() {
 
   const { countries } = useCountries();
   const { articles, isLoading, isError } = useArticles();
+  // Newsroom analysis vs ingested wire — rendered as separate columns so a
+  // reader can tell at a glance what we wrote and what we monitored.
+  const { articles: editorial } = useArticles({ kind: 'editorial', limit: 9 });
+  const { articles: wire } = useArticles({ kind: 'news', limit: 12 });
   const { articles: mostRead } = useMostRead();
   const { scores: macroScores } = useMacroScores();
 
@@ -96,6 +101,15 @@ export default function HomePage() {
             <div className="min-w-0">
               {lead && <Hero lead={lead} secondary={secondary} onOpen={openArticle} />}
 
+              {/* Articles vs news, side by side: our own analysis carries
+                  the visual weight (cards), the wire runs as a dense
+                  chronological rail next to it. */}
+              <ArticlesNewsSplit
+                editorial={editorial.filter((a) => !heroIds.has(a.id))}
+                wire={wire.filter((a) => !heroIds.has(a.id))}
+                onOpen={openArticle}
+              />
+
               <div className="mt-10 border-t border-border/10 pt-8">
                 <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
                   {CATEGORY_ORDER.map((cat) => (
@@ -133,8 +147,6 @@ export default function HomePage() {
 
               <EnergyWidget />
 
-              <WeatherWidget />
-
               <Newsletter />
             </aside>
           </div>
@@ -142,6 +154,80 @@ export default function HomePage() {
       </main>
 
       <Footer />
+    </div>
+  );
+}
+
+/**
+ * The articles/news split under the hero. Left: newsroom-authored analysis
+ * as full story cards. Right: the ingested news wire as a dense
+ * chronological rail with source attribution. Either side hides when it
+ * has nothing — no empty shells.
+ */
+function ArticlesNewsSplit({
+  editorial,
+  wire,
+  onOpen,
+}: {
+  editorial: Article[];
+  wire: Article[];
+  onOpen: (a: Article) => void;
+}) {
+  if (editorial.length === 0 && wire.length === 0) return null;
+  return (
+    <div
+      className={`mt-10 grid grid-cols-1 gap-x-8 gap-y-8 border-t border-border/10 pt-8 ${
+        editorial.length > 0 && wire.length > 0 ? 'xl:grid-cols-[1fr_300px]' : ''
+      }`}
+    >
+      {editorial.length > 0 && (
+        <section aria-label="Analysis by Apolitics">
+          <div className="mb-4 flex items-baseline gap-2">
+            <h2 className="text-h2 text-text-primary">Analysis</h2>
+            <span className="text-caption text-text-tertiary">written by the Apolitics newsroom</span>
+          </div>
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={staggerContainer}
+            className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {editorial.slice(0, 6).map((a) => (
+              <StoryCard key={a.id} article={a} onOpen={onOpen} />
+            ))}
+          </motion.div>
+        </section>
+      )}
+
+      {wire.length > 0 && (
+        <section aria-label="News wire" className="min-w-0">
+          <div className="mb-4 flex items-baseline gap-2">
+            <h2 className="text-h2 text-text-primary">News</h2>
+            <span className="text-caption text-text-tertiary">from monitored sources</span>
+          </div>
+          <ol className="flex flex-col divide-y divide-border/10 rounded-2xl border border-border/10 bg-bg-2 px-4">
+            {wire.slice(0, 10).map((a) => (
+              <li key={a.id}>
+                <button onClick={() => onOpen(a)} className="group block w-full py-3 text-left">
+                  <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
+                    {a.category && (
+                      <span style={{ color: CATEGORY_COLOR[a.category as EventCategory] }}>
+                        {CATEGORY_LABEL[a.category as EventCategory]}
+                      </span>
+                    )}
+                    <span className="normal-case tracking-normal text-text-tertiary">
+                      {a.source?.name ?? 'Wire'} · {formatRelativeTime(a.publishedAt)}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-[13px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
+                    {a.title}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </div>
   );
 }

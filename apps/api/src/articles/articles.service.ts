@@ -16,13 +16,17 @@ export class ArticlesService {
 
   async findAll(query: ListArticlesQueryDto) {
     const limit = query.limit ?? 20;
-    const cacheKey = `articles:all:${query.category ?? '*'}:${query.countryId ?? '*'}:${limit}`;
+    const cacheKey = `articles:all:${query.category ?? '*'}:${query.countryId ?? '*'}:${query.kind ?? '*'}:${limit}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return cached;
 
     const where: Prisma.ArticleWhereInput = { published: true };
     if (query.category) where.category = query.category;
     if (query.countryId) where.countryId = query.countryId.toUpperCase();
+    // Newsroom-authored analysis vs ingested wire — the homepage splits
+    // these into separate columns.
+    if (query.kind === 'editorial') where.authorId = { not: null };
+    if (query.kind === 'news') where.sourceId = { not: null };
 
     // Over-fetch a larger recency-ordered pool, then cap how many of the
     // final `limit` slots any single source can take — otherwise one
@@ -32,7 +36,11 @@ export class ArticlesService {
       where,
       orderBy: { publishedAt: 'desc' },
       take: Math.min(limit * 4, 100),
-      include: { country: true },
+      include: {
+        country: true,
+        // The homepage news rail attributes each wire item to its outlet.
+        source: { select: { id: true, name: true, type: true, official: true } },
+      },
     });
 
     const diversified = this.applySourceDiversity(pool, limit);

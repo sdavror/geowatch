@@ -235,7 +235,6 @@ export const INFO_PAGES: InfoPage[] = [
           'UN Comtrade — bilateral trade flows.',
           'US EIA — energy benchmarks (Brent, WTI, Henry Hub).',
           'OpenSanctions — aggregate sanctioned-entity counts.',
-          'Open-Meteo — weather (no API key, no tracking).',
         ],
       },
       {
@@ -259,7 +258,7 @@ export const INFO_PAGES: InfoPage[] = [
       {
         heading: 'Data licensing',
         paragraphs: [
-          'We use public and openly licensed datasets and honor their terms: World Bank (CC BY-4.0), IMF/DBnomics (open access), UN Comtrade (public dissemination terms), US EIA (public domain), OpenSanctions (CC BY-NC for the consolidated dataset), Open-Meteo (CC BY 4.0). Wire and official content is quoted with attribution and linked to the original.',
+          'We use public and openly licensed datasets and honor their terms: World Bank (CC BY-4.0), IMF/DBnomics (open access), UN Comtrade (public dissemination terms), US EIA (public domain), OpenSanctions (CC BY-NC for the consolidated dataset). Wire and official content is quoted with attribution and linked to the original.',
         ],
       },
       {

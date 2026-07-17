@@ -57,8 +57,8 @@ export function Footer() {
             countries — reported without a side.
           </p>
           <p className="mt-3 max-w-xs text-[11px] leading-relaxed text-text-tertiary">
-            Country risk scores derive from World Bank and IMF series, refreshed daily. Weather by
-            Open-Meteo. Map geometry reflects UN-recognized borders.
+            Country risk scores derive from World Bank and IMF series, refreshed daily. Map
+            geometry reflects UN-recognized borders.
           </p>
         </div>
 

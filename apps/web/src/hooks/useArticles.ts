@@ -45,11 +45,17 @@ export function recordArticleView(articleId: string) {
   });
 }
 
-export function useArticles(filters?: { category?: string; countryId?: string; limit?: number }) {
+export function useArticles(filters?: {
+  category?: string;
+  countryId?: string;
+  limit?: number;
+  kind?: 'editorial' | 'news';
+}) {
   const params = new URLSearchParams();
   if (filters?.category) params.set('category', filters.category);
   if (filters?.countryId) params.set('countryId', filters.countryId);
   if (filters?.limit) params.set('limit', String(filters.limit));
+  if (filters?.kind) params.set('kind', filters.kind);
   const query = params.toString();
 
   const { data, error, isLoading } = useSWR<Article[]>(
