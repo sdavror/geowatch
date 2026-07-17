@@ -356,15 +356,60 @@ model Entity {
   id            String     @id @default(uuid()) @db.Uuid
   entityType    EntityType @default(company)
   canonicalName String
+  // Best-known country, populated from an identifier's countryId or a
+  // source's address hint during resolution. Not authoritative (a company
+  // can legitimately operate across borders) — used only to bound the
+  // fuzzy-match candidate pool to a sane size (comparing a new record
+  // against every entity on file wouldn't scale past a few thousand rows).
+  primaryCountryId String?  @map("primary_country_id") @db.Char(2)
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  identifiers EntityIdentifier[]
-  aliases     EntityAlias[]
-  sourceLinks EntitySourceLink[]
-  sanctions   EntitySanction[]
+  identifiers  EntityIdentifier[]
+  aliases      EntityAlias[]
+  sourceLinks  EntitySourceLink[]
+  sanctions    EntitySanction[]
+  reviewsAsA   EntityMergeReview[] @relation("MergeReviewA")
+  reviewsAsB   EntityMergeReview[] @relation("MergeReviewB")
 
+  @@index([primaryCountryId])
   @@map("entities")
+}
+
+enum MergeReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+// Phase 2: a fuzzy name+country match that could NOT be confirmed by a
+// shared identifier gets queued here rather than auto-merged — the whole
+// point of starting conservative is that a silent wrong merge is much
+// harder to notice and undo than a human spending 10 seconds confirming
+// "yes, these are the same company." entityA is the pre-existing entity;
+// entityB is the new entity the just-ingested record created (ingestion
+// never blocks on review — it always gets its own Entity row, and approving
+// a review is what folds entityB's data into entityA and removes entityB).
+model EntityMergeReview {
+  id         String            @id @default(uuid()) @db.Uuid
+  entityAId  String            @map("entity_a_id") @db.Uuid
+  entityA    Entity            @relation("MergeReviewA", fields: [entityAId], references: [id], onDelete: Cascade)
+  entityBId  String            @map("entity_b_id") @db.Uuid
+  entityB    Entity            @relation("MergeReviewB", fields: [entityBId], references: [id], onDelete: Cascade)
+  confidence Float
+  // Which signals contributed and their individual scores — e.g.
+  // {"nameSimilarity": 0.94, "countryMatch": true}. Kept as a transparent
+  // breakdown for the reviewer, not a black-box single number.
+  matchedOn  Json              @map("matched_on")
+  status     MergeReviewStatus @default(pending)
+  reviewerId String?           @map("reviewer_id") @db.Uuid
+  reviewer   User?             @relation(fields: [reviewerId], references: [id])
+  createdAt  DateTime          @default(now()) @map("created_at")
+  reviewedAt DateTime?         @map("reviewed_at")
+
+  @@unique([entityAId, entityBId])
+  @@index([status])
+  @@map("entity_merge_reviews")
 }
 
 model EntityIdentifier {
@@ -514,6 +559,7 @@ model User {
   tasks         EditorialTask[]
   sentMessages     Message[] @relation("sentMessages")
   receivedMessages Message[] @relation("receivedMessages")
+  entityMergeReviews EntityMergeReview[]
 
   @@map("users")
 }

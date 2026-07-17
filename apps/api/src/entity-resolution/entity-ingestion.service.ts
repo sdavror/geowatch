@@ -67,12 +67,19 @@ export class EntityIngestionService {
         value: id.value,
         countryId: countryMap.get(this.normalizeCountryName(id.countryName)) ?? '',
       }));
+      // Prefer an identifier's own country (most specific — it's literally
+      // "registered in X"); fall back to the entity's first listed address.
+      const primaryCountryId =
+        identifiers.find((i) => i.countryId)?.countryId ||
+        countryMap.get(this.normalizeCountryName(e.addressCountryNames[0] ?? null)) ||
+        null;
       const record: NormalizedEntityRecord = {
         sourceExternalId: e.externalId,
         name: e.name,
         aliases: e.aliases,
         identifiers,
         sanctions: e.programs.map((p) => ({ regime: 'OFAC', program: p })),
+        primaryCountryId,
         raw: e.raw,
       };
       const result = await this.resolution.resolve(record, source.id);
@@ -117,10 +124,31 @@ export class EntityIngestionService {
       name: top.legalName,
       aliases: top.otherNames,
       identifiers,
+      primaryCountryId: top.countryIso2,
       raw: top.raw,
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, lei: top.lei, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * Resolves a bare name (no identifiers) against the existing entity graph
+   * — the shape a mention extracted from article text would have. Doubles
+   * as the Phase 2 fuzzy-matching verification tool now and as the seed for
+   * Phase 4 (linking sanctioned companies to the articles that mention
+   * them) later.
+   */
+  async resolveByName(name: string, countryId?: string | null) {
+    const source = await this.getOrCreateSource('Manual/Text mention', 'internal://manual', 'company');
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: `manual:${name}`,
+      name,
+      aliases: [],
+      identifiers: [],
+      primaryCountryId: countryId ?? null,
+      raw: { manual: true, name },
+    };
+    return this.resolution.resolve(record, source.id);
   }
 
   private async getOrCreateSource(name: string, url: string, entityType: string) {
