@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { AudienceAnalytics, ReferrerAnalytics, ViewsAnalytics } from '@geowatch/shared-types';
 import { authFetch } from '@/lib/auth';
 import { StatusBadge } from './StatusBadge';
-import { AreaChart, BarList, DaysPicker } from './charts';
+import { AreaChart, BarList, DaysPicker } from '@/components/charts';
 
 function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (

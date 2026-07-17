@@ -167,6 +167,38 @@ export interface TradePartnersResponse {
   imports: TradePartnerEntry[];
 }
 
+// One country's Country Health score history + latest component breakdown.
+// Served by GET /macro/scores/:countryId.
+export interface CountryScoreHistoryEntry {
+  period: string;
+  value: number;
+  methodology: string;
+}
+
+export interface CountryScoreResponse {
+  countryId: string;
+  scoreName: string;
+  history: CountryScoreHistoryEntry[];
+  latestComponents: Record<string, number> | null;
+}
+
+// UCDP conflict-intensity series for one country. Served by
+// GET /macro/conflict/:countryId.
+export interface ConflictMonthEntry {
+  month: string; // YYYY-MM-DD
+  events: number;
+  deaths: number;
+  stateBased: number;
+  nonState: number;
+  oneSided: number;
+}
+
+export interface ConflictSeriesResponse {
+  countryId: string;
+  months: ConflictMonthEntry[];
+  trailing12m: { events: number; deaths: number };
+}
+
 // Global energy benchmark (Brent/WTI/Henry Hub spot), latest value + 30-day
 // change. Series is not per-country — these are world reference prices.
 // Served by GET /macro/energy.
