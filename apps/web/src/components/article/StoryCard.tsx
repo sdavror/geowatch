@@ -9,6 +9,10 @@ import { formatRelativeTime } from '@/lib/formatRelativeTime';
 interface StoryCardProps {
   article: Article;
   onOpen: (a: Article) => void;
+  // 'medium' = full 16:9 media card (default, the prior only look).
+  // 'compact' = dense row, no media — used to weight down secondary items
+  // in a grid so the block as a whole doesn't compete with the page Hero.
+  size?: 'medium' | 'compact';
 }
 
 // Shared entrance variant so cards rise into view in a stagger; the parent
@@ -25,13 +29,45 @@ export const staggerContainer = {
 };
 
 /**
- * Reusable premium story card: 16:9 media, category tag, headline, meta.
- * Framer Motion adds a spring hover-lift and tap feedback. Used in related
- * stories, recommendations, and category grids.
+ * Reusable premium story card. Framer Motion adds a spring hover-lift and
+ * tap feedback. Used in related stories, recommendations, and category
+ * grids — size controls how much visual weight it carries in a mixed grid.
  */
-export function StoryCard({ article, onOpen }: StoryCardProps) {
+export function StoryCard({ article, onOpen, size = 'medium' }: StoryCardProps) {
   const img = mediaUrl(article.imageUrl);
   const cat = article.category as EventCategory | null;
+
+  if (size === 'compact') {
+    return (
+      <motion.button
+        variants={cardVariants}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => onOpen(article)}
+        className="group flex w-full gap-3 rounded-xl border border-border/10 bg-bg-2 p-3 text-left transition-colors hover:bg-bg-3/50"
+      >
+        <div className="flex h-12 w-14 flex-shrink-0 items-center justify-center rounded-lg bg-bg-3 text-xl">
+          {article.country?.flagEmoji ?? '🌐'}
+        </div>
+        <div className="min-w-0 flex-1">
+          {cat && (
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: CATEGORY_COLOR[cat] }}
+            >
+              {CATEGORY_LABEL[cat]}
+            </span>
+          )}
+          <h3 className="mt-0.5 line-clamp-2 text-[14px] font-medium leading-snug text-text-primary transition-colors group-hover:text-brand-text">
+            {article.title}
+          </h3>
+          <div className="mt-1 text-[11px] text-text-tertiary">
+            {article.country?.name && <span>{article.country.name} · </span>}
+            {formatRelativeTime(article.publishedAt)}
+          </div>
+        </div>
+      </motion.button>
+    );
+  }
 
   return (
     <motion.button

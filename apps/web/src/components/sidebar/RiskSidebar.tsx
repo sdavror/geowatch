@@ -20,7 +20,7 @@ export function RiskSidebar({ countries, onSelectCountry, onOpenFullMap }: RiskS
   return (
     <aside className="w-full rounded-2xl border border-border/10 bg-bg-2 p-4">
       <div className="mb-4 overflow-hidden rounded-lg border border-border/10 bg-bg">
-        <div className="h-28">
+        <div className="h-44">
           <MiniMap countries={countries} onSelectCountry={onSelectCountry} />
         </div>
         <button
