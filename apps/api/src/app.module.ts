@@ -18,6 +18,7 @@ import { AnalysisModule } from './analysis/analysis.module';
 import { TasksModule } from './tasks/tasks.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { MessagesModule } from './messages/messages.module';
+import { EntityResolutionModule } from './entity-resolution/entity-resolution.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 
@@ -50,6 +51,7 @@ import { validateEnv } from './config/env.validation';
     TasksModule,
     AnalyticsModule,
     MessagesModule,
+    EntityResolutionModule,
   ],
   providers: [
     {

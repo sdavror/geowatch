@@ -306,9 +306,137 @@ model Source {
   articleCount         Int        @default(0) @map("article_count")
   createdAt            DateTime   @default(now()) @map("created_at")
 
-  articles Article[]
+  // ── Source Registry fields (Entity Resolution / Data Fusion) ──
+  // Free-text, not an enum: this column exists purely as human-readable
+  // registry metadata ("company", "sanction", "vessel"...) — matching is
+  // never done by joining on it, only EntityIdentifier equality resolves
+  // entities. Null for ordinary article/RSS sources.
+  entityType           String?    @map("entity_type")
+  // Editorial confidence in this source's data quality, 1-10 — surfaced in
+  // the admin Source Registry view, not currently used in resolution logic.
+  trustScore           Int?       @map("trust_score")
+
+  articles          Article[]
+  entityIdentifiers EntityIdentifier[]
+  entityAliases     EntityAlias[]
+  entitySourceLinks EntitySourceLink[]
+  entitySanctions   EntitySanction[]
 
   @@map("sources")
+}
+
+// ─────────────────────────────────────────────
+// Entity Resolution / Data Fusion (Phase 1: exact-identifier matching only —
+// no fuzzy scoring, no LLM merge. Each source is ingested independently and
+// normalized into an EntityIdentifier/EntityAlias pair; resolution merges
+// two records ONLY when they share an identifier of the same type+value
+// (+countryId for nationally-scoped identifiers like a registration number,
+// since e.g. "1025501701686" is only unique within Russia). Everything else
+// stays as separate Entity rows rather than risk a false merge — the whole
+// point of starting with identifiers-only is that a wrong merge silently
+// corrupts which facts belong to which real-world company.
+// ─────────────────────────────────────────────
+
+enum EntityType {
+  company
+}
+
+// Deliberately not scoped to a fixed catalog beyond what Phase 1 sources
+// actually produce — OFAC's own "Registration Number"/"Tax ID No." labels
+// vary by country and get folded into reg_number/tax_id here, with the
+// country recorded on EntityIdentifier.countryId to keep them from
+// colliding across jurisdictions.
+enum IdentifierType {
+  lei
+  reg_number
+  tax_id
+}
+
+model Entity {
+  id            String     @id @default(uuid()) @db.Uuid
+  entityType    EntityType @default(company)
+  canonicalName String
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  identifiers EntityIdentifier[]
+  aliases     EntityAlias[]
+  sourceLinks EntitySourceLink[]
+  sanctions   EntitySanction[]
+
+  @@map("entities")
+}
+
+model EntityIdentifier {
+  id        String         @id @default(uuid()) @db.Uuid
+  entityId  String         @map("entity_id") @db.Uuid
+  entity    Entity         @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  type      IdentifierType
+  value     String
+  // Empty string for globally-unique identifiers (LEI); an ISO2 code for
+  // nationally-scoped ones (a registration/tax number is only unique within
+  // its own country). Not nullable on purpose — Prisma's generated
+  // findUnique input for a compound @@unique requires every field to be
+  // non-null, so a real null here would make this identifier unlookupable.
+  countryId String         @default("") @map("country_id") @db.VarChar(2)
+  sourceId  String?        @map("source_id") @db.Uuid
+  source    Source?        @relation(fields: [sourceId], references: [id])
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@unique([type, value, countryId])
+  @@index([entityId])
+  @@map("entity_identifiers")
+}
+
+model EntityAlias {
+  id        String   @id @default(uuid()) @db.Uuid
+  entityId  String   @map("entity_id") @db.Uuid
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  name      String
+  sourceId  String?  @map("source_id") @db.Uuid
+  source    Source?  @relation(fields: [sourceId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([entityId, name])
+  @@index([entityId])
+  @@map("entity_aliases")
+}
+
+// Raw per-source record backing an Entity — kept for audit ("why did we
+// decide this") and so a source can be safely re-ingested (upsert by
+// sourceId+externalId) without duplicating aliases/identifiers.
+model EntitySourceLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityId   String   @map("entity_id") @db.Uuid
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sourceId   String   @map("source_id") @db.Uuid
+  source     Source   @relation(fields: [sourceId], references: [id])
+  externalId String   @map("external_id")
+  rawPayload Json     @map("raw_payload")
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  @@unique([sourceId, externalId])
+  @@index([entityId])
+  @@map("entity_source_links")
+}
+
+// Per-entity sanction listing — distinct from the pre-existing SanctionRecord
+// above (that one is a per-country OpenSanctions entity-count aggregate for
+// the Country Health score; this one is "this specific resolved Entity is
+// listed under this specific regime/program").
+model EntitySanction {
+  id        String   @id @default(uuid()) @db.Uuid
+  entityId  String   @map("entity_id") @db.Uuid
+  entity    Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  regime    String
+  program   String
+  sourceId  String   @map("source_id") @db.Uuid
+  source    Source   @relation(fields: [sourceId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([entityId, regime, program])
+  @@index([entityId])
+  @@map("entity_sanctions")
 }
 
 model Article {
