@@ -12,6 +12,7 @@ import { RiskSidebar } from '@/components/sidebar/RiskSidebar';
 import { Navbar } from '@/components/nav/Navbar';
 import { Footer } from '@/components/nav/Footer';
 import { Hero } from '@/components/home/Hero';
+import { LiveFeed } from '@/components/home/LiveFeed';
 import { Newsletter } from '@/components/home/Newsletter';
 import { MarketsWidget } from '@/components/home/MarketsWidget';
 import { CountryHealthWidget } from '@/components/home/CountryHealthWidget';
@@ -53,16 +54,6 @@ export default function HomePage() {
   const lead = view[0];
   const secondary = view.slice(1, 3);
   const heroIds = new Set([lead, ...secondary].filter(Boolean).map((a) => a!.id));
-
-  const latest = useMemo(
-    () =>
-      [...articles]
-        .filter((a) => !heroIds.has(a.id))
-        .sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? ''))
-        .slice(0, 6),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [articles, lead, secondary.length],
-  );
 
   const sectionArticles = (cat: EventCategory) =>
     view.filter((a) => a.category === cat && !heroIds.has(a.id));
@@ -132,13 +123,13 @@ export default function HomePage() {
                 onOpenFullMap={() => router.push('/map')}
               />
 
+              <LiveFeed onOpen={openArticle} />
+
               <CountryHealthWidget scores={macroScores} />
 
               <MarketsWidget countries={countries} />
 
               <EnergyWidget />
-
-              <RankedList title="Latest updates" articles={latest} onOpen={openArticle} />
 
               {/* Most read needs real traffic to be meaningful — stays
                   hidden rather than showing a near-empty ranked list. */}
