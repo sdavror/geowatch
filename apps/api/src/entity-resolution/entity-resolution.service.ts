@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizeCompanyName, bigramSimilarity } from './name-similarity.util';
 
 export type IdentifierType = 'lei' | 'reg_number' | 'tax_id';
 
@@ -20,13 +21,31 @@ export interface NormalizedEntityRecord {
   aliases: string[];
   identifiers: NormalizedIdentifier[];
   sanctions?: Array<{ regime: string; program: string }>;
+  // Best-known country for this record — used only to bound the Phase 2
+  // fuzzy-candidate search, not for identifier matching.
+  primaryCountryId?: string | null;
   raw: unknown;
 }
 
 export interface ResolveResult {
   entityId: string;
   merged: boolean; // true if this record matched an existing Entity by identifier
+  // Set when Phase 2's fuzzy pass found a plausible-but-unconfirmed match
+  // and queued it for human review — the record still got its own new
+  // Entity (entityId above), this is purely informational.
+  queuedReviewId?: string;
 }
+
+// Below this, a fuzzy candidate isn't worth surfacing to a reviewer at all
+// (too much noise). Deliberately NOT a merge threshold — nothing in Phase 2
+// auto-merges regardless of how high the score climbs; that's the whole
+// point of a "Needs Review" queue instead of an auto-merge cutoff.
+const REVIEW_QUEUE_THRESHOLD = 0.7;
+// How many same-country (or country-unknown) entities to pull as fuzzy
+// candidates per unmatched record — bounds the comparison cost; this
+// project's Phase 1 scope (~4,400 RU/UA/BY entities) keeps per-country
+// pools well under this even without the country filter helping much yet.
+const CANDIDATE_POOL_LIMIT = 1000;
 
 /**
  * Phase 1 of the Entity Resolution Engine: identifier-only matching. No
@@ -59,11 +78,24 @@ export class EntityResolutionService {
       }
     }
 
+    // Phase 2: no identifier matched — before creating a brand-new Entity,
+    // check whether an existing one looks like a plausible fuzzy match. If
+    // so we still create the new Entity (ingestion never blocks on review),
+    // but also queue a review row so a human can confirm/reject the merge.
+    let fuzzyCandidate: { entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null = null;
+    if (!matchedEntityId) {
+      fuzzyCandidate = await this.findFuzzyCandidate(record);
+    }
+
     const entityId =
       matchedEntityId ??
       (
         await this.prisma.entity.create({
-          data: { entityType: 'company', canonicalName: record.name },
+          data: {
+            entityType: 'company',
+            canonicalName: record.name,
+            primaryCountryId: record.primaryCountryId || null,
+          },
         })
       ).id;
 
@@ -112,6 +144,77 @@ export class EntityResolutionService {
       this.logger.debug(`Merged "${record.name}" into existing entity ${matchedEntityId} by identifier match`);
     }
 
-    return { entityId, merged: matchedEntityId !== null };
+    let queuedReviewId: string | undefined;
+    if (fuzzyCandidate && fuzzyCandidate.entityId !== entityId) {
+      const review = await this.prisma.entityMergeReview.upsert({
+        where: { entityAId_entityBId: { entityAId: fuzzyCandidate.entityId, entityBId: entityId } },
+        create: {
+          entityAId: fuzzyCandidate.entityId,
+          entityBId: entityId,
+          confidence: Math.round(fuzzyCandidate.confidence * 100),
+          matchedOn: {
+            nameSimilarity: Math.round(fuzzyCandidate.nameSimilarity * 100) / 100,
+            countryMatch: fuzzyCandidate.countryMatch,
+          },
+        },
+        update: {},
+      });
+      queuedReviewId = review.id;
+      this.logger.debug(
+        `Queued merge review ${review.id}: entity ${entityId} ("${record.name}") vs ${fuzzyCandidate.entityId} — confidence ${Math.round(fuzzyCandidate.confidence * 100)}%`,
+      );
+    }
+
+    return { entityId, merged: matchedEntityId !== null, queuedReviewId };
+  }
+
+  /**
+   * Phase 2 fuzzy pass — only runs when identifier matching found nothing.
+   * Scores every same-country (or country-unknown) existing entity's
+   * canonical name against this record's, returns the best candidate above
+   * the review threshold. Never merges; the caller only queues a review row.
+   */
+  private async findFuzzyCandidate(
+    record: NormalizedEntityRecord,
+  ): Promise<{ entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null> {
+    const country = record.primaryCountryId || null;
+    const targetName = normalizeCompanyName(record.name);
+
+    // A plain country-scoped LIMIT would return an ARBITRARY slice of a
+    // multi-thousand-row country (Postgres doesn't order it for you) — the
+    // real match could easily fall outside that slice. Block on the first
+    // significant token of the normalized name instead: cheap, and it
+    // guarantees anything actually sharing that word is in the pool. This
+    // misses matches with zero shared vocabulary in the first word (a
+    // genuine limitation of Phase 2's blocking strategy, not a bug to work
+    // around here — Phase 3's LLM pass can catch what this blocks out).
+    const blockingToken = targetName.split(' ').find((t) => t.length >= 3);
+    if (!blockingToken) return null;
+
+    const candidates = await this.prisma.entity.findMany({
+      where: {
+        canonicalName: { contains: blockingToken, mode: 'insensitive' },
+        ...(country ? { OR: [{ primaryCountryId: country }, { primaryCountryId: null }] } : {}),
+      },
+      select: { id: true, canonicalName: true, primaryCountryId: true },
+      take: CANDIDATE_POOL_LIMIT,
+    });
+
+    let best: { entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null = null;
+
+    for (const c of candidates) {
+      const nameSimilarity = bigramSimilarity(targetName, normalizeCompanyName(c.canonicalName));
+      const countryMatch = !country || !c.primaryCountryId || c.primaryCountryId === country;
+      // Name carries most of the signal (0.7); country agreement is a
+      // secondary corroborating factor (0.3) — matches the weighting
+      // rationale from the original design draft (name 40%, country 20%,
+      // scaled here to the two structured signals Phase 2 actually has;
+      // address/website/directors are deferred until that data exists).
+      const confidence = nameSimilarity * 0.7 + (countryMatch ? 1 : 0) * 0.3;
+      if (confidence >= REVIEW_QUEUE_THRESHOLD && (!best || confidence > best.confidence)) {
+        best = { entityId: c.id, confidence, nameSimilarity, countryMatch };
+      }
+    }
+    return best;
   }
 }
