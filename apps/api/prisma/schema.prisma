@@ -321,6 +321,7 @@ model Source {
   entityAliases     EntityAlias[]
   entitySourceLinks EntitySourceLink[]
   entitySanctions   EntitySanction[]
+  entityRelationships EntityRelationship[]
 
   @@map("sources")
 }
@@ -371,6 +372,8 @@ model Entity {
   sanctions    EntitySanction[]
   reviewsAsA   EntityMergeReview[] @relation("MergeReviewA")
   reviewsAsB   EntityMergeReview[] @relation("MergeReviewB")
+  relationshipsAsParent EntityRelationship[] @relation("RelationshipParent")
+  relationshipsAsChild  EntityRelationship[] @relation("RelationshipChild")
 
   @@index([primaryCountryId])
   @@map("entities")
@@ -482,6 +485,26 @@ model EntitySanction {
   @@unique([entityId, regime, program])
   @@index([entityId])
   @@map("entity_sanctions")
+}
+
+// Corporate ownership structure — currently sourced from GLEIF's free
+// Level 2 relationship records (direct-parent / direct-children), the only
+// source in this project with genuinely structured ownership data rather
+// than free-text mentions. parentId owns/consolidates childId.
+model EntityRelationship {
+  id        String   @id @default(uuid()) @db.Uuid
+  parentId  String   @map("parent_id") @db.Uuid
+  parent    Entity   @relation("RelationshipParent", fields: [parentId], references: [id], onDelete: Cascade)
+  childId   String   @map("child_id") @db.Uuid
+  child     Entity   @relation("RelationshipChild", fields: [childId], references: [id], onDelete: Cascade)
+  sourceId  String   @map("source_id") @db.Uuid
+  source    Source   @relation(fields: [sourceId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([parentId, childId])
+  @@index([parentId])
+  @@index([childId])
+  @@map("entity_relationships")
 }
 
 model Article {

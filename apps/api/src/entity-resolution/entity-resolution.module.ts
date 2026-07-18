@@ -7,6 +7,8 @@ import { EntityMergeReviewService } from './entity-merge-review.service';
 import { LlmEntityMatchService } from './llm-entity-match.service';
 import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
+import { EuSanctionsAdapter } from './eu-sanctions.adapter';
+import { OfsiAdapter } from './ofsi.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -19,6 +21,8 @@ import { OllamaClient } from '../analysis/ollama.client';
     OllamaClient,
     OfacSdnAdapter,
     GleifAdapter,
+    EuSanctionsAdapter,
+    OfsiAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })

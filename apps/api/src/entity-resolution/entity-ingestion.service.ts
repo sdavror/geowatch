@@ -3,6 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
+import { EuSanctionsAdapter } from './eu-sanctions.adapter';
+import { OfsiAdapter } from './ofsi.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -51,6 +53,8 @@ export class EntityIngestionService {
     private readonly prisma: PrismaService,
     private readonly ofac: OfacSdnAdapter,
     private readonly gleif: GleifAdapter,
+    private readonly euSanctions: EuSanctionsAdapter,
+    private readonly ofsi: OfsiAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -60,6 +64,24 @@ export class EntityIngestionService {
       await this.ingestOfac();
     } catch (err) {
       this.logger.error(`Scheduled OFAC entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 30 4 * * 1') // Mondays 04:30 UTC — staggered after OFAC
+  async scheduledEuRefresh() {
+    try {
+      await this.ingestEuSanctions();
+    } catch (err) {
+      this.logger.error(`Scheduled EU entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 0 5 * * 1') // Mondays 05:00 UTC — staggered after EU
+  async scheduledOfsiRefresh() {
+    try {
+      await this.ingestOfsi();
+    } catch (err) {
+      this.logger.error(`Scheduled OFSI entity ingestion failed: ${(err as Error).message}`);
     }
   }
 
@@ -112,6 +134,168 @@ export class EntityIngestionService {
     return summary;
   }
 
+  async ingestEuSanctions(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'EU Consolidated Sanctions List',
+      'https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1',
+      'company',
+    );
+    const entities = await this.euSanctions.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const identifiers = e.identifiers.map((id) => ({
+        type: id.type,
+        value: id.value,
+        countryId: id.countryIso2 ?? '', // EU gives ISO2 directly, no name mapping needed
+      }));
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers,
+        sanctions: e.programs.map((p) => ({ regime: 'EU', program: p })),
+        primaryCountryId: identifiers.find((i) => i.countryId)?.countryId || null,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `EU entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  async ingestOfsi(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'UK OFSI Consolidated List',
+      'https://ofsistorage.blob.core.windows.net/publishlive/2022format/ConList.xml',
+      'company',
+    );
+    const countryMap = await this.buildCountryNameMap();
+    const entities = await this.ofsi.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const identifiers = [];
+      for (const id of e.identifiers) {
+        const countryId = countryMap.get(this.normalizeCountryName(id.countryName)) ?? '';
+        // OFSI's field is free text and doesn't say whether a given number
+        // is a registration number or a tax ID — check both before
+        // defaulting, so this doesn't collide-on-value-but-miss-on-type
+        // against an identifier another source already stored correctly.
+        const type = await this.resolution.resolveIdentifierType(id.value, countryId, ['reg_number', 'tax_id']);
+        identifiers.push({ type, value: id.value, countryId });
+      }
+      const primaryCountryId =
+        identifiers.find((i) => i.countryId)?.countryId ||
+        countryMap.get(this.normalizeCountryName(e.countryName)) ||
+        null;
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers,
+        sanctions: e.programs.map((p) => ({ regime: 'UK OFSI', program: p })),
+        primaryCountryId,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `UK OFSI entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * Fetches GLEIF's direct-parent and direct-children for an entity's known
+   * LEI, resolves each through the normal pipeline (so a parent/child that
+   * already exists from another source correctly links to it rather than
+   * duplicating), and records the ownership edges. Requires the entity to
+   * already carry an LEI identifier — call enrichWithGleif() first if it
+   * doesn't have one yet.
+   */
+  async enrichRelationshipsWithGleif(
+    entityId: string,
+  ): Promise<{ lei: string | null; parentLinked: boolean; childrenLinked: number }> {
+    const leiRow = await this.prisma.entityIdentifier.findFirst({
+      where: { entityId, type: 'lei' },
+      select: { value: true },
+    });
+    if (!leiRow) return { lei: null, parentLinked: false, childrenLinked: 0 };
+
+    const source = await this.getOrCreateSource('GLEIF', 'https://api.gleif.org/api/v1', 'company');
+    let parentLinked = false;
+
+    const parent = await this.gleif.fetchDirectParent(leiRow.value);
+    if (parent?.lei) {
+      const parentRecord = this.gleifRecordToNormalized(parent);
+      const { entityId: parentEntityId } = await this.resolution.resolve(parentRecord, source.id);
+      if (parentEntityId !== entityId) {
+        await this.prisma.entityRelationship.upsert({
+          where: { parentId_childId: { parentId: parentEntityId, childId: entityId } },
+          create: { parentId: parentEntityId, childId: entityId, sourceId: source.id },
+          update: {},
+        });
+        parentLinked = true;
+      }
+    }
+
+    const children = await this.gleif.fetchDirectChildren(leiRow.value);
+    let childrenLinked = 0;
+    for (const child of children) {
+      if (!child.lei) continue;
+      const childRecord = this.gleifRecordToNormalized(child);
+      const { entityId: childEntityId } = await this.resolution.resolve(childRecord, source.id);
+      if (childEntityId === entityId) continue;
+      await this.prisma.entityRelationship.upsert({
+        where: { parentId_childId: { parentId: entityId, childId: childEntityId } },
+        create: { parentId: entityId, childId: childEntityId, sourceId: source.id },
+        update: {},
+      });
+      childrenLinked++;
+    }
+
+    return { lei: leiRow.value, parentLinked, childrenLinked };
+  }
+
+  private gleifRecordToNormalized(g: {
+    lei: string;
+    legalName: string;
+    otherNames: string[];
+    registeredAs: string | null;
+    countryIso2: string | null;
+    raw: unknown;
+  }): NormalizedEntityRecord {
+    const identifiers = [{ type: 'lei' as IdentifierType, value: g.lei, countryId: '' }];
+    if (g.registeredAs) {
+      identifiers.push({ type: 'reg_number' as IdentifierType, value: g.registeredAs, countryId: g.countryIso2 ?? '' });
+    }
+    return {
+      sourceExternalId: g.lei,
+      name: g.legalName,
+      aliases: g.otherNames,
+      identifiers,
+      primaryCountryId: g.countryIso2,
+      raw: g.raw,
+    };
+  }
+
   /**
    * On-demand enrichment for ONE already-resolved entity — not a batch cron
    * over the full OFAC-derived entity set. GLEIF's fulltext search is a
@@ -128,22 +312,7 @@ export class EntityIngestionService {
     const top = results[0];
     if (!top.lei) return { found: false };
 
-    const identifiers = [{ type: 'lei' as IdentifierType, value: top.lei, countryId: '' }];
-    if (top.registeredAs) {
-      identifiers.push({
-        type: 'reg_number' as IdentifierType,
-        value: top.registeredAs,
-        countryId: top.countryIso2 ?? '',
-      });
-    }
-    const record: NormalizedEntityRecord = {
-      sourceExternalId: top.lei,
-      name: top.legalName,
-      aliases: top.otherNames,
-      identifiers,
-      primaryCountryId: top.countryIso2,
-      raw: top.raw,
-    };
+    const record = this.gleifRecordToNormalized(top);
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, lei: top.lei, matchedExisting: result.entityId === entityId };
   }

@@ -93,6 +93,34 @@ export class EntityResolutionService {
     private readonly llm: LlmEntityMatchService,
   ) {}
 
+  /**
+   * For sources whose identifier field doesn't reliably say WHAT KIND of
+   * number it is (UK OFSI's Entity_BusinessRegNumber is free text that can
+   * hold a registration number, a tax ID, or something else depending on
+   * jurisdiction) — checks each candidate type in order for an existing
+   * match on this exact value+country, and returns the first hit. Falls
+   * back to the first candidate if none match, so a genuinely-new number
+   * still gets stored under a sane default type. Real bug this fixes:
+   * OFSI's field held Gazprom Neft's tax ID, hard-coded as reg_number,
+   * which silently created a duplicate entity because it collided on VALUE
+   * but not TYPE with the tax_id OFAC had already stored for the same
+   * number.
+   */
+  async resolveIdentifierType(
+    value: string,
+    countryId: string,
+    candidates: IdentifierType[],
+  ): Promise<IdentifierType> {
+    for (const type of candidates) {
+      const existing = await this.prisma.entityIdentifier.findUnique({
+        where: { type_value_countryId: { type, value, countryId } },
+        select: { entityId: true },
+      });
+      if (existing) return type;
+    }
+    return candidates[0];
+  }
+
   async resolve(record: NormalizedEntityRecord, sourceId: string, llmBudget?: LlmBudget): Promise<ResolveResult> {
     // Idempotency check FIRST, before any identifier/fuzzy matching: if this
     // exact source record was already ingested once, always resume the

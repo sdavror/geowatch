@@ -48,6 +48,9 @@ export class EntitiesController {
         identifiers: { include: { source: { select: { name: true } } } },
         sanctions: { include: { source: { select: { name: true } } } },
         sourceLinks: { select: { externalId: true, fetchedAt: true, source: { select: { name: true } } } },
+        // Both directions: who owns this entity, and what it owns.
+        relationshipsAsChild: { include: { parent: { select: { id: true, canonicalName: true } } } },
+        relationshipsAsParent: { include: { child: { select: { id: true, canonicalName: true } } } },
       },
     });
     if (!entity) throw new NotFoundException(`Entity "${id}" not found`);
