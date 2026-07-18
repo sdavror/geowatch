@@ -55,6 +55,34 @@ export class GleifAdapter {
     return (body.data ?? []).map((r) => this.toRecord(r));
   }
 
+  /**
+   * The parent this LEI is directly consolidated by, per GLEIF's free
+   * Level 2 relationship data — real structured ownership, not a name
+   * guess. Null if GLEIF has no relationship record on file (most LEI
+   * holders don't report one; it's optional data even for GLEIF).
+   */
+  async fetchDirectParent(lei: string): Promise<GleifRecord | null> {
+    const res = await fetch(`${GLEIF_BASE}/lei-records/${lei}/direct-parent`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      this.logger.warn(`GLEIF direct-parent for ${lei} responded ${res.status}`);
+      return null;
+    }
+    const body = (await res.json()) as { data?: GleifApiRecord };
+    return body.data ? this.toRecord(body.data) : null;
+  }
+
+  /** Entities that directly consolidate INTO this LEI — its subsidiaries. */
+  async fetchDirectChildren(lei: string): Promise<GleifRecord[]> {
+    const res = await fetch(`${GLEIF_BASE}/lei-records/${lei}/direct-children?page[size]=200`);
+    if (!res.ok) {
+      this.logger.warn(`GLEIF direct-children for ${lei} responded ${res.status}`);
+      return [];
+    }
+    const body = (await res.json()) as { data?: GleifApiRecord[] };
+    return (body.data ?? []).map((r) => this.toRecord(r));
+  }
+
   private toRecord(r: GleifApiRecord): GleifRecord {
     const entity = r.attributes?.entity ?? {};
     const otherNames = [

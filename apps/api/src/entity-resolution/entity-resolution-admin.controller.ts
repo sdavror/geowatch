@@ -33,9 +33,25 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestOfac();
   }
 
+  @Post('ingest/eu')
+  ingestEu() {
+    return this.ingestion.ingestEuSanctions();
+  }
+
+  @Post('ingest/ofsi')
+  ingestOfsi() {
+    return this.ingestion.ingestOfsi();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);
+  }
+
+  /** Requires the entity to already have an LEI (run enrich/:id/gleif first if needed). */
+  @Post('enrich/:entityId/gleif-relationships')
+  enrichGleifRelationships(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichRelationshipsWithGleif(entityId);
   }
 
   /** Resolves a bare name (no identifiers) — verification tool now, seed for article-mention linking later. */
