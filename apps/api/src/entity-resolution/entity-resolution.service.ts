@@ -64,8 +64,21 @@ export class EntityResolutionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async resolve(record: NormalizedEntityRecord, sourceId: string): Promise<ResolveResult> {
-    let matchedEntityId: string | null = null;
-    for (const id of record.identifiers) {
+    // Idempotency check FIRST, before any identifier/fuzzy matching: if this
+    // exact source record was already ingested once, always resume the
+    // entity it landed on. Without this, a record with no structured
+    // identifiers (common — most OFAC entries have none) has no stable key
+    // to match on across re-ingestions, so a straight re-run would either
+    // create a fresh duplicate every time or roll the dice on the fuzzy
+    // pass finding its own previous entity. Confirmed live: re-running OFAC
+    // ingestion on identical data produced 594 duplicate entities before
+    // this check existed.
+    const existingLink = await this.prisma.entitySourceLink.findUnique({
+      where: { sourceId_externalId: { sourceId, externalId: record.sourceExternalId } },
+      select: { entityId: true },
+    });
+    let matchedEntityId: string | null = existingLink?.entityId ?? null;
+    for (const id of matchedEntityId ? [] : record.identifiers) {
       const existing = await this.prisma.entityIdentifier.findUnique({
         where: {
           type_value_countryId: { type: id.type, value: id.value, countryId: id.countryId },
@@ -98,6 +111,18 @@ export class EntityResolutionService {
           },
         })
       ).id;
+
+    // Self-healing backfill: an entity created before primaryCountryId
+    // existed (or from a source that didn't know the country yet) stays
+    // null forever otherwise — re-ingestion never re-runs the create()
+    // branch for an already-matched entity. Any later record that DOES
+    // know the country fills the gap.
+    if (matchedEntityId && record.primaryCountryId) {
+      await this.prisma.entity.updateMany({
+        where: { id: matchedEntityId, primaryCountryId: null },
+        data: { primaryCountryId: record.primaryCountryId },
+      });
+    }
 
     const allNames = [record.name, ...record.aliases];
     for (const name of new Set(allNames)) {
