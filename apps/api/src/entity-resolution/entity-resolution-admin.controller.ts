@@ -43,6 +43,11 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestOfsi();
   }
 
+  @Post('ingest/sec-edgar')
+  ingestSecEdgar() {
+    return this.ingestion.ingestSecEdgar();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);

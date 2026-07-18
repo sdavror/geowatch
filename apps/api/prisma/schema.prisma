@@ -351,6 +351,7 @@ enum IdentifierType {
   lei
   reg_number
   tax_id
+  cik // SEC EDGAR Central Index Key — globally unique, US public companies
 }
 
 model Entity {

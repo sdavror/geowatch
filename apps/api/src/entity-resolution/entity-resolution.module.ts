@@ -9,6 +9,7 @@ import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
 import { EuSanctionsAdapter } from './eu-sanctions.adapter';
 import { OfsiAdapter } from './ofsi.adapter';
+import { SecEdgarAdapter } from './sec-edgar.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -23,6 +24,7 @@ import { OllamaClient } from '../analysis/ollama.client';
     GleifAdapter,
     EuSanctionsAdapter,
     OfsiAdapter,
+    SecEdgarAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })
