@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeCompanyName, bigramSimilarity } from './name-similarity.util';
+import { LlmEntityMatchService } from './llm-entity-match.service';
 
 export type IdentifierType = 'lei' | 'reg_number' | 'tax_id';
 
@@ -30,10 +31,28 @@ export interface NormalizedEntityRecord {
 export interface ResolveResult {
   entityId: string;
   merged: boolean; // true if this record matched an existing Entity by identifier
-  // Set when Phase 2's fuzzy pass found a plausible-but-unconfirmed match
-  // and queued it for human review — the record still got its own new
+  // Set when Phase 2/3's fuzzy or LLM pass found a plausible-but-unconfirmed
+  // match and queued it for human review — the record still got its own new
   // Entity (entityId above), this is purely informational.
   queuedReviewId?: string;
+}
+
+// A single ingestion run shares one budget object so LLM calls stay bounded
+// no matter how many gray-zone candidates a large batch turns up — local
+// 14B inference is slow enough (seconds per call) that an unbounded pass
+// over thousands of records would turn a minute-long ingestion into hours.
+// Passed by reference; the caller (EntityIngestionService) owns the count.
+export interface LlmBudget {
+  remaining: number;
+}
+
+interface CandidateMatch {
+  entityId: string;
+  confidence: number; // 0-1
+  nameSimilarity: number;
+  countryMatch: boolean;
+  method: 'fuzzy' | 'llm';
+  llmReasoning?: string;
 }
 
 // Below this, a fuzzy candidate isn't worth surfacing to a reviewer at all
@@ -41,6 +60,14 @@ export interface ResolveResult {
 // auto-merges regardless of how high the score climbs; that's the whole
 // point of a "Needs Review" queue instead of an auto-merge cutoff.
 const REVIEW_QUEUE_THRESHOLD = 0.7;
+// Below this, string similarity is so low that asking the LLM would almost
+// always just burn GPU time confirming "no, unrelated" — not worth it.
+const LLM_GRAY_ZONE_MIN = 0.35;
+// The LLM's own stated confidence (0-100) needed to queue a review off its
+// judgment alone. Independent of the fuzzy REVIEW_QUEUE_THRESHOLD above —
+// they're different scales measuring different things (string similarity
+// vs the model's semantic-equivalence confidence).
+const LLM_QUEUE_THRESHOLD = 70;
 // How many same-country (or country-unknown) entities to pull as fuzzy
 // candidates per unmatched record — bounds the comparison cost; this
 // project's Phase 1 scope (~4,400 RU/UA/BY entities) keeps per-country
@@ -61,9 +88,12 @@ const CANDIDATE_POOL_LIMIT = 1000;
 export class EntityResolutionService {
   private readonly logger = new Logger(EntityResolutionService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmEntityMatchService,
+  ) {}
 
-  async resolve(record: NormalizedEntityRecord, sourceId: string): Promise<ResolveResult> {
+  async resolve(record: NormalizedEntityRecord, sourceId: string, llmBudget?: LlmBudget): Promise<ResolveResult> {
     // Idempotency check FIRST, before any identifier/fuzzy matching: if this
     // exact source record was already ingested once, always resume the
     // entity it landed on. Without this, a record with no structured
@@ -95,9 +125,9 @@ export class EntityResolutionService {
     // check whether an existing one looks like a plausible fuzzy match. If
     // so we still create the new Entity (ingestion never blocks on review),
     // but also queue a review row so a human can confirm/reject the merge.
-    let fuzzyCandidate: { entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null = null;
+    let fuzzyCandidate: CandidateMatch | null = null;
     if (!matchedEntityId) {
-      fuzzyCandidate = await this.findFuzzyCandidate(record);
+      fuzzyCandidate = await this.findFuzzyCandidate(record, llmBudget);
     }
 
     const entityId =
@@ -178,15 +208,17 @@ export class EntityResolutionService {
           entityBId: entityId,
           confidence: Math.round(fuzzyCandidate.confidence * 100),
           matchedOn: {
+            method: fuzzyCandidate.method,
             nameSimilarity: Math.round(fuzzyCandidate.nameSimilarity * 100) / 100,
             countryMatch: fuzzyCandidate.countryMatch,
+            ...(fuzzyCandidate.llmReasoning ? { llmReasoning: fuzzyCandidate.llmReasoning } : {}),
           },
         },
         update: {},
       });
       queuedReviewId = review.id;
       this.logger.debug(
-        `Queued merge review ${review.id}: entity ${entityId} ("${record.name}") vs ${fuzzyCandidate.entityId} — confidence ${Math.round(fuzzyCandidate.confidence * 100)}%`,
+        `Queued merge review ${review.id} (${fuzzyCandidate.method}): entity ${entityId} ("${record.name}") vs ${fuzzyCandidate.entityId} — confidence ${Math.round(fuzzyCandidate.confidence * 100)}%`,
       );
     }
 
@@ -194,14 +226,20 @@ export class EntityResolutionService {
   }
 
   /**
-   * Phase 2 fuzzy pass — only runs when identifier matching found nothing.
-   * Scores every same-country (or country-unknown) existing entity's
-   * canonical name against this record's, returns the best candidate above
-   * the review threshold. Never merges; the caller only queues a review row.
+   * Fuzzy pass (Phase 2) with an LLM escalation (Phase 3) for the gray
+   * zone — only runs when identifier matching found nothing. Scores every
+   * same-country (or country-unknown) candidate's canonical name by string
+   * similarity; a strong match queues immediately (method: 'fuzzy'). A
+   * mediocre-but-not-hopeless match gets a second opinion from the local
+   * LLM, which can recognize semantic equivalence plain bigram similarity
+   * can't (heavy transliteration, abbreviations, translated legal names) —
+   * if the model agrees with high confidence, that queues too (method:
+   * 'llm'). Never merges either way; the caller only queues a review row.
    */
   private async findFuzzyCandidate(
     record: NormalizedEntityRecord,
-  ): Promise<{ entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null> {
+    llmBudget?: LlmBudget,
+  ): Promise<CandidateMatch | null> {
     const country = record.primaryCountryId || null;
     const targetName = normalizeCompanyName(record.name);
 
@@ -209,10 +247,15 @@ export class EntityResolutionService {
     // multi-thousand-row country (Postgres doesn't order it for you) — the
     // real match could easily fall outside that slice. Block on the first
     // significant token of the normalized name instead: cheap, and it
-    // guarantees anything actually sharing that word is in the pool. This
-    // misses matches with zero shared vocabulary in the first word (a
-    // genuine limitation of Phase 2's blocking strategy, not a bug to work
-    // around here — Phase 3's LLM pass can catch what this blocks out).
+    // guarantees anything actually sharing that word is in the pool.
+    // Known limitation NOT fixed by the LLM pass below: a record sharing
+    // ZERO literal substrings with the real match (e.g. a query in Cyrillic
+    // against a Latin-only canonical name) never enters this candidate
+    // pool at all, so the LLM never gets a chance to judge it — the LLM
+    // only re-ranks/rescues candidates this blocking step already found,
+    // it doesn't independently discover matches by pure semantics. Real
+    // cross-script candidate discovery would need embedding-based search,
+    // out of scope here.
     const blockingToken = targetName.split(' ').find((t) => t.length >= 3);
     if (!blockingToken) return null;
 
@@ -225,7 +268,7 @@ export class EntityResolutionService {
       take: CANDIDATE_POOL_LIMIT,
     });
 
-    let best: { entityId: string; confidence: number; nameSimilarity: number; countryMatch: boolean } | null = null;
+    let best: (CandidateMatch & { canonicalName: string }) | null = null;
 
     for (const c of candidates) {
       const nameSimilarity = bigramSimilarity(targetName, normalizeCompanyName(c.canonicalName));
@@ -236,10 +279,32 @@ export class EntityResolutionService {
       // scaled here to the two structured signals Phase 2 actually has;
       // address/website/directors are deferred until that data exists).
       const confidence = nameSimilarity * 0.7 + (countryMatch ? 1 : 0) * 0.3;
-      if (confidence >= REVIEW_QUEUE_THRESHOLD && (!best || confidence > best.confidence)) {
-        best = { entityId: c.id, confidence, nameSimilarity, countryMatch };
+      if (!best || confidence > best.confidence) {
+        best = { entityId: c.id, confidence, nameSimilarity, countryMatch, method: 'fuzzy', canonicalName: c.canonicalName };
       }
     }
-    return best;
+
+    if (!best) return null;
+    if (best.confidence >= REVIEW_QUEUE_THRESHOLD) return best;
+
+    // Gray zone: string similarity alone isn't confident enough to queue,
+    // but isn't nothing either — worth a semantic second opinion, budget
+    // permitting.
+    if (best.confidence >= LLM_GRAY_ZONE_MIN && llmBudget && llmBudget.remaining > 0) {
+      llmBudget.remaining--;
+      const judgment = await this.llm.judge(record.name, country, best.canonicalName, country);
+      if (judgment?.isMatch && judgment.confidence >= LLM_QUEUE_THRESHOLD) {
+        return {
+          entityId: best.entityId,
+          confidence: judgment.confidence / 100,
+          nameSimilarity: best.nameSimilarity,
+          countryMatch: best.countryMatch,
+          method: 'llm',
+          llmReasoning: judgment.reasoning,
+        };
+      }
+    }
+
+    return null;
   }
 }

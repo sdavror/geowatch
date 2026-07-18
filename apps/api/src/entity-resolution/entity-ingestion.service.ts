@@ -3,7 +3,20 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
-import { EntityResolutionService, type NormalizedEntityRecord, type IdentifierType } from './entity-resolution.service';
+import {
+  EntityResolutionService,
+  type NormalizedEntityRecord,
+  type IdentifierType,
+  type LlmBudget,
+} from './entity-resolution.service';
+
+// Local 14B inference takes real seconds per call — bounds one ingestion
+// run's LLM usage so a large batch (thousands of records, most of which
+// will have zero real gray-zone candidates) can't turn into an hours-long
+// run. In steady state this rarely gets close: re-ingestion is idempotent
+// (see EntityResolutionService.resolve), so only genuinely NEW records
+// without identifiers ever reach the gray-zone check at all.
+const OFAC_LLM_BUDGET = 200;
 
 // OFAC's free-text country names occasionally don't match our Country.name
 // spelling exactly — same pattern as the UCDP alias table in conflict.service.ts.
@@ -58,6 +71,7 @@ export class EntityIngestionService {
     );
     const countryMap = await this.buildCountryNameMap();
     const entities = await this.ofac.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
 
     let created = 0;
     let merged = 0;
@@ -82,9 +96,12 @@ export class EntityIngestionService {
         primaryCountryId,
         raw: e.raw,
       };
-      const result = await this.resolution.resolve(record, source.id);
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
       if (result.merged) merged++;
       else created++;
+    }
+    if (llmBudget.remaining === 0) {
+      this.logger.warn(`OFAC entity ingestion: LLM gray-zone budget (${OFAC_LLM_BUDGET}) exhausted before the run finished — some plausible matches may not have gotten a semantic second opinion this pass.`);
     }
 
     await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
@@ -148,7 +165,10 @@ export class EntityIngestionService {
       primaryCountryId: countryId ?? null,
       raw: { manual: true, name },
     };
-    return this.resolution.resolve(record, source.id);
+    // Small per-call budget — this is a single manual lookup (verification
+    // tool / future article-mention linking), not a batch job, so one LLM
+    // call is the natural cap rather than borrowing the ingestion-sized one.
+    return this.resolution.resolve(record, source.id, { remaining: 1 });
   }
 
   private async getOrCreateSource(name: string, url: string, entityType: string) {
