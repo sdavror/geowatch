@@ -5,6 +5,7 @@ import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
 import { EuSanctionsAdapter } from './eu-sanctions.adapter';
 import { OfsiAdapter } from './ofsi.adapter';
+import { SecEdgarAdapter } from './sec-edgar.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -55,6 +56,7 @@ export class EntityIngestionService {
     private readonly gleif: GleifAdapter,
     private readonly euSanctions: EuSanctionsAdapter,
     private readonly ofsi: OfsiAdapter,
+    private readonly secEdgar: SecEdgarAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -82,6 +84,15 @@ export class EntityIngestionService {
       await this.ingestOfsi();
     } catch (err) {
       this.logger.error(`Scheduled OFSI entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 30 5 * * 1') // Mondays 05:30 UTC — staggered after OFSI
+  async scheduledSecEdgarRefresh() {
+    try {
+      await this.ingestSecEdgar();
+    } catch (err) {
+      this.logger.error(`Scheduled SEC EDGAR entity ingestion failed: ${(err as Error).message}`);
     }
   }
 
@@ -218,6 +229,44 @@ export class EntityIngestionService {
     const summary = { processed: entities.length, created, merged };
     this.logger.log(
       `UK OFSI entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * US public company registry — not scoped by country/regime like the
+   * sanctions sources (it's a general identity source, ~10,400 companies),
+   * no sanctions payload. CIK is globally unique so no country mapping is
+   * needed either.
+   */
+  async ingestSecEdgar(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'SEC EDGAR',
+      'https://www.sec.gov/files/company_tickers.json',
+      'company',
+    );
+    const companies = await this.secEdgar.fetchCompanies();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const c of companies) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: c.cik,
+        name: c.name,
+        aliases: c.ticker ? [c.ticker] : [],
+        identifiers: [{ type: 'cik' as IdentifierType, value: c.cik, countryId: '' }],
+        raw: c,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: companies.length, created, merged };
+    this.logger.log(
+      `SEC EDGAR entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
     );
     return summary;
   }

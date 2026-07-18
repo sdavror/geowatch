@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { normalizeCompanyName, bigramSimilarity } from './name-similarity.util';
 import { LlmEntityMatchService } from './llm-entity-match.service';
 
-export type IdentifierType = 'lei' | 'reg_number' | 'tax_id';
+export type IdentifierType = 'lei' | 'reg_number' | 'tax_id' | 'cik';
 
 export interface NormalizedIdentifier {
   type: IdentifierType;
@@ -149,12 +149,21 @@ export class EntityResolutionService {
       }
     }
 
-    // Phase 2: no identifier matched — before creating a brand-new Entity,
-    // check whether an existing one looks like a plausible fuzzy match. If
-    // so we still create the new Entity (ingestion never blocks on review),
-    // but also queue a review row so a human can confirm/reject the merge.
+    // Phase 2/3 only apply when a record has NO identifiers of its own —
+    // that's the actual "we have no other way to link this" case fuzzy/LLM
+    // matching exists for. A record that already carries its own reliable
+    // identifier (e.g. every SEC EDGAR record has a CIK) doesn't need a
+    // name-similarity guess: if it's really the same company as something
+    // else, a shared identifier will resolve that on its own later (or an
+    // on-demand enrichment tool can check deliberately). Real bug this
+    // fixes: bulk-ingesting ~10,400 SEC-listed companies ran fuzzy/LLM
+    // against the ENTIRE cross-source entity pool for every single one —
+    // financial entities share enough generic vocabulary ("Fund", "Trust",
+    // "Income", "Municipal") that bigram similarity alone produced hundreds
+    // of spurious high-confidence review candidates between clearly
+    // unrelated companies.
     let fuzzyCandidate: CandidateMatch | null = null;
-    if (!matchedEntityId) {
+    if (!matchedEntityId && record.identifiers.length === 0) {
       fuzzyCandidate = await this.findFuzzyCandidate(record, llmBudget);
     }
 
