@@ -10,6 +10,7 @@ import { CompaniesHouseAdapter } from './companies-house.adapter';
 import { FranceRegistryAdapter, type FranceRegistryResult } from './france-registry.adapter';
 import { CanadaSemaAdapter } from './canada-sema.adapter';
 import { AustraliaDfatAdapter } from './australia-dfat.adapter';
+import { UsCslAdapter } from './us-csl.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -66,6 +67,7 @@ export class EntityIngestionService {
     private readonly franceRegistry: FranceRegistryAdapter,
     private readonly canadaSema: CanadaSemaAdapter,
     private readonly australiaDfat: AustraliaDfatAdapter,
+    private readonly usCsl: UsCslAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -120,6 +122,16 @@ export class EntityIngestionService {
       await this.ingestAustraliaDfat();
     } catch (err) {
       this.logger.error(`Scheduled Australia DFAT entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 0 7 * * 1') // Mondays 07:00 UTC — staggered after Australia
+  async scheduledUsCslRefresh() {
+    if (!this.usCsl.configured) return; // no key registered yet — skip quietly, not an error
+    try {
+      await this.ingestUsCsl();
+    } catch (err) {
+      this.logger.error(`Scheduled US CSL entity ingestion failed: ${(err as Error).message}`);
     }
   }
 
@@ -341,6 +353,57 @@ export class EntityIngestionService {
     const summary = { processed: entities.length, created, merged };
     this.logger.log(
       `Australia DFAT entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * US trade.gov Consolidated Screening List — 11 non-SDN export/sanctions
+   * lists in one feed (SDN itself is excluded, see us-csl.adapter.ts).
+   * Requires a user-registered TRADE_GOV_API_KEY (self-service signup,
+   * same key-gated pattern as Companies House). Identifier types are
+   * genuinely ambiguous free text here too (like OFSI), so the same
+   * resolveIdentifierType check-before-default applies.
+   */
+  async ingestUsCsl(): Promise<IngestSummary> {
+    if (!this.usCsl.configured) {
+      throw new Error('TRADE_GOV_API_KEY is not configured');
+    }
+    const source = await this.getOrCreateSource(
+      'US Consolidated Screening List',
+      'https://developer.trade.gov/apis',
+      'company',
+    );
+    const entities = await this.usCsl.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const identifiers = [];
+      for (const id of e.identifiers) {
+        const countryId = id.countryIso2 ?? '';
+        const type = await this.resolution.resolveIdentifierType(id.value, countryId, ['reg_number', 'tax_id']);
+        identifiers.push({ type, value: id.value, countryId });
+      }
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers,
+        sanctions: e.programs.map((p) => ({ regime: `US CSL (${e.sourceAbbrev})`, program: p })),
+        primaryCountryId: e.countryIso2,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `US CSL entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
     );
     return summary;
   }
