@@ -61,6 +61,7 @@ services:
       EIA_API_KEY: ${EIA_API_KEY:-}
       UCDP_API_TOKEN: ${UCDP_API_TOKEN:-}
       COMPANIES_HOUSE_API_KEY: ${COMPANIES_HOUSE_API_KEY:-}
+      TRADE_GOV_API_KEY: ${TRADE_GOV_API_KEY:-}
     ports:
       - '4000:4000'
     networks:

@@ -58,6 +58,11 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestAustraliaDfat();
   }
 
+  @Post('ingest/us-csl')
+  ingestUsCsl() {
+    return this.ingestion.ingestUsCsl();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);
