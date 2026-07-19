@@ -7,6 +7,7 @@ import { EuSanctionsAdapter } from './eu-sanctions.adapter';
 import { OfsiAdapter } from './ofsi.adapter';
 import { SecEdgarAdapter } from './sec-edgar.adapter';
 import { CompaniesHouseAdapter } from './companies-house.adapter';
+import { FranceRegistryAdapter, type FranceRegistryResult } from './france-registry.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -60,6 +61,7 @@ export class EntityIngestionService {
     private readonly ofsi: OfsiAdapter,
     private readonly secEdgar: SecEdgarAdapter,
     private readonly companiesHouse: CompaniesHouseAdapter,
+    private readonly franceRegistry: FranceRegistryAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -419,6 +421,67 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, companyNumber: profile.companyNumber, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against France's open SIRENE/RNE company register
+   * — same shape as enrichWithCompaniesHouse (search is discovery only, the
+   * actual merge goes through identifier equality on SIREN, scoped to FR).
+   * Unlike Companies House, no API key is required. Also picks the best NAME
+   * match by bigram score rather than trusting registration status, for the
+   * same reason recorded on enrichWithCompaniesHouse.
+   *
+   * Real bug found live: unlike Companies House, this registry's full-text
+   * search requires near-exact token overlap — legal-form noise stripped by
+   * normalizeCompanyName isn't enough on its own, since OFAC-derived
+   * canonical names also carry untranslated abbreviations (e.g. "AK Alrosa
+   * PAO" — "AK" is a Russian "Aktsionernaya Kompaniya" prefix, not a known
+   * legal suffix) that make the API return zero results even though a clean
+   * "ALROSA" record exists. Falls back through the entity's existing
+   * aliases (OFAC/GLEIF already store cleaner name variants for exactly
+   * this kind of case) until one search actually surfaces a real match.
+   */
+  async enrichWithFranceRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; siren?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource(
+      'France SIRENE Registry',
+      'https://recherche-entreprises.api.gouv.fr',
+      'company',
+    );
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: FranceRegistryResult; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      const query = normalizeCompanyName(candidateName);
+      if (!query) continue;
+      const results = await this.franceRegistry.searchByName(query);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break; // strong match already — stop probing more aliases
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.franceRegistry.fetchProfile(best.r.siren);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.siren,
+      name: profile.name,
+      aliases: profile.sigle ? [profile.sigle] : [],
+      identifiers: [{ type: 'reg_number', value: profile.siren, countryId: 'FR' }],
+      primaryCountryId: profile.countryIso2 ?? 'FR',
+      raw: profile,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, siren: profile.siren, matchedExisting: result.entityId === entityId };
   }
 
   /**

@@ -11,6 +11,7 @@ import { EuSanctionsAdapter } from './eu-sanctions.adapter';
 import { OfsiAdapter } from './ofsi.adapter';
 import { SecEdgarAdapter } from './sec-edgar.adapter';
 import { CompaniesHouseAdapter } from './companies-house.adapter';
+import { FranceRegistryAdapter } from './france-registry.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -27,6 +28,7 @@ import { OllamaClient } from '../analysis/ollama.client';
     OfsiAdapter,
     SecEdgarAdapter,
     CompaniesHouseAdapter,
+    FranceRegistryAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })
