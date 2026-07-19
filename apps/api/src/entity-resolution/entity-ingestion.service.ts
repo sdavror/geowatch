@@ -13,6 +13,9 @@ import { AustraliaDfatAdapter } from './australia-dfat.adapter';
 import { UsCslAdapter } from './us-csl.adapter';
 import { EstoniaRegistryAdapter } from './estonia-registry.adapter';
 import { LatviaRegistryAdapter } from './latvia-registry.adapter';
+import { NorwayBrregAdapter } from './norway-brreg.adapter';
+import { FinlandYtjAdapter } from './finland-ytj.adapter';
+import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -72,6 +75,9 @@ export class EntityIngestionService {
     private readonly usCsl: UsCslAdapter,
     private readonly estoniaRegistry: EstoniaRegistryAdapter,
     private readonly latviaRegistry: LatviaRegistryAdapter,
+    private readonly norwayBrreg: NorwayBrregAdapter,
+    private readonly finlandYtj: FinlandYtjAdapter,
+    private readonly switzerlandZefix: SwitzerlandZefixAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -848,6 +854,179 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, siren: profile.siren, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Norway's Brønnøysund Register — same shape
+   * as enrichWithCompaniesHouse/enrichWithFranceRegistry (search is
+   * discovery only, the actual merge goes through identifier equality on
+   * the org number, scoped to NO). Free and keyless, confirmed live
+   * 2026-07-20. Also pulls real reported board members/daily manager via
+   * the register's own `/roller` endpoint — genuine data, not modelled as
+   * cross-source Person identity (same EntityOfficer fact-record approach
+   * as Companies House PSC/France `dirigeants`).
+   */
+  async enrichWithNorwayRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; orgNumber?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource(
+      'Norway Brønnøysund Register',
+      'https://data.brreg.no/enhetsregisteret/api',
+      'company',
+    );
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { orgNumber: string; name: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      const query = normalizeCompanyName(candidateName);
+      if (!query) continue;
+      const results = await this.norwayBrreg.searchByName(query);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.norwayBrreg.fetchProfile(best.r.orgNumber);
+    if (!profile) return { found: false };
+    const officers = await this.norwayBrreg.fetchOfficers(profile.orgNumber);
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.orgNumber,
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.orgNumber, countryId: 'NO' }],
+      primaryCountryId: 'NO',
+      profile: {
+        website: profile.website,
+        status: profile.status,
+        industryCode: profile.industryCode,
+        industryLabel: profile.industryLabel,
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+      },
+      officers: officers.map((o) => ({ name: o.name, role: 'officer' as const })),
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, orgNumber: profile.orgNumber, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Finland's PRH YTJ register — same shape as
+   * enrichWithNorwayRegistry. Free and keyless, confirmed live 2026-07-20.
+   * `status`/`tradeRegisterStatus` are undocumented numeric codes on this
+   * API (no public enum found) — left unset rather than guessed, per this
+   * project's convention of not inventing meanings for unclear source
+   * fields (see the France/Companies House status-mapping comments for the
+   * same discipline applied elsewhere). No officer/director data is
+   * exposed by this API, unlike Norway's `/roller`.
+   */
+  async enrichWithFinlandRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; businessId?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Finland PRH YTJ Register', 'https://avoindata.prh.fi', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { businessId: string; name: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      const query = normalizeCompanyName(candidateName);
+      if (!query) continue;
+      const results = await this.finlandYtj.searchByName(query);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.finlandYtj.fetchProfile(best.r.businessId);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.businessId,
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.businessId, countryId: 'FI' }],
+      primaryCountryId: 'FI',
+      profile: {
+        website: profile.website,
+        industryCode: profile.industryCode,
+        industryLabel: profile.industryLabel,
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+      },
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, businessId: profile.businessId, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Switzerland's Zefix central business-name
+   * index — same shape as enrichWithNorwayRegistry/enrichWithFinlandRegistry.
+   * Confirmed live 2026-07-20 via the frontend's own undocumented (but
+   * keyless, no-auth) API — the official documented API requires a paid
+   * subscription. Deliberately sparse: Zefix is a national NAME INDEX, not
+   * the full commercial register, so it has no street address, industry
+   * code, website, or officer data — just UID, registered canton/commune,
+   * and status. Still useful given Switzerland's relevance as a common
+   * holding/trading jurisdiction for exactly the kind of company this
+   * project tracks.
+   */
+  async enrichWithSwitzerlandRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; uid?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Switzerland Zefix', 'https://www.zefix.ch', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { ehraid: number; name: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      const query = normalizeCompanyName(candidateName);
+      if (!query) continue;
+      const results = await this.switzerlandZefix.searchByName(query);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.switzerlandZefix.fetchProfile(best.r.ehraid);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: String(profile.ehraid),
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.uid, countryId: 'CH' }],
+      primaryCountryId: 'CH',
+      profile: { status: profile.status, addressCity: profile.addressCity },
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, uid: profile.uid, matchedExisting: result.entityId === entityId };
   }
 
   /**

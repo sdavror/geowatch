@@ -88,6 +88,21 @@ export class EntityResolutionAdminController {
     return this.ingestion.enrichWithFranceRegistry(entityId);
   }
 
+  @Post('enrich/:entityId/norway-registry')
+  enrichNorwayRegistry(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichWithNorwayRegistry(entityId);
+  }
+
+  @Post('enrich/:entityId/finland-registry')
+  enrichFinlandRegistry(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichWithFinlandRegistry(entityId);
+  }
+
+  @Post('enrich/:entityId/switzerland-registry')
+  enrichSwitzerlandRegistry(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichWithSwitzerlandRegistry(entityId);
+  }
+
   /** Requires the entity to already have an LEI (run enrich/:id/gleif first if needed). */
   @Post('enrich/:entityId/gleif-relationships')
   enrichGleifRelationships(@Param('entityId') entityId: string) {
