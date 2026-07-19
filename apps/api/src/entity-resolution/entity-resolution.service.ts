@@ -16,6 +16,27 @@ export interface NormalizedIdentifier {
   countryId: string;
 }
 
+// Company-profile fields a source may or may not carry. Deliberately all
+// optional and sparse — most identifier-only sanctions sources (OFAC/EU/
+// OFSI/Canada/Australia) have none of this in their raw payload.
+export interface NormalizedEntityProfile {
+  website?: string | null;
+  status?: string | null; // normalized: active | dissolved | liquidated | unknown
+  industryCode?: string | null;
+  industryLabel?: string | null;
+  addressLine?: string | null;
+  addressCity?: string | null;
+  addressPostalCode?: string | null;
+}
+
+export type OfficerRole = 'director' | 'beneficial_owner' | 'officer';
+
+export interface NormalizedOfficer {
+  name: string;
+  role: OfficerRole;
+  countryId?: string | null;
+}
+
 export interface NormalizedEntityRecord {
   sourceExternalId: string;
   name: string;
@@ -25,6 +46,8 @@ export interface NormalizedEntityRecord {
   // Best-known country for this record — used only to bound the Phase 2
   // fuzzy-candidate search, not for identifier matching.
   primaryCountryId?: string | null;
+  profile?: NormalizedEntityProfile;
+  officers?: NormalizedOfficer[];
   raw: unknown;
 }
 
@@ -191,6 +214,9 @@ export class EntityResolutionService {
       });
     }
 
+    if (record.profile) await this.fillProfileFields(entityId, record.profile);
+    if (record.officers?.length) await this.addOfficers(entityId, sourceId, record.officers);
+
     const allNames = [record.name, ...record.aliases];
     for (const name of new Set(allNames)) {
       await this.prisma.entityAlias.upsert({
@@ -260,6 +286,57 @@ export class EntityResolutionService {
     }
 
     return { entityId, merged: matchedEntityId !== null, queuedReviewId };
+  }
+
+  /**
+   * Self-healing fill: only writes a column that is currently null, never
+   * overwrites an existing value. Sparse by design — most sources supply
+   * none of this, and the first source that ever does shouldn't be
+   * clobbered by a later, less-detailed one. Exposed publicly (not just
+   * inlined in resolve()) so the one-time backfill script can apply the
+   * exact same fill semantics to already-ingested rawPayload data.
+   */
+  async fillProfileFields(entityId: string, profile: NormalizedEntityProfile): Promise<void> {
+    // Bounded columns get a defensive truncate — the Latvia CHAR(2) crash
+    // (a compound value overflowing a fixed-width column brought down a
+    // whole ingestion run) is exactly the failure mode this guards against
+    // for every other bounded field, not just the one that already bit us.
+    const trunc = (v: string, max: number) => (v.length > max ? v.slice(0, max) : v);
+    const fills: Record<string, string> = {};
+    if (profile.website) fills.website = trunc(profile.website, 255);
+    if (profile.status) fills.status = trunc(profile.status, 20);
+    if (profile.industryCode) fills.industryCode = trunc(profile.industryCode, 32);
+    if (profile.industryLabel) fills.industryLabel = profile.industryLabel;
+    if (profile.addressLine) fills.addressLine = profile.addressLine;
+    if (profile.addressCity) fills.addressCity = trunc(profile.addressCity, 100);
+    if (profile.addressPostalCode) fills.addressPostalCode = trunc(profile.addressPostalCode, 20);
+    for (const [field, value] of Object.entries(fills)) {
+      await this.prisma.entity.updateMany({
+        where: { id: entityId, [field]: null },
+        data: { [field]: value },
+      });
+    }
+  }
+
+  /** Upserts each officer fact-record; a no-op for ones already recorded from this exact source. */
+  async addOfficers(entityId: string, sourceId: string, officers: NormalizedOfficer[]): Promise<number> {
+    for (const officer of officers) {
+      // Defensive guard, not the fix: countryId is CHAR(2), and at least one
+      // source (Latvia) turned out to sometimes hand over a compound
+      // multi-code value that crashed the whole ingestion run before its
+      // adapter was fixed to split on the real cause. Any future source
+      // with the same kind of dirty data degrades to "no country" instead
+      // of taking the run down.
+      const countryId = officer.countryId && officer.countryId.length === 2 ? officer.countryId : null;
+      await this.prisma.entityOfficer.upsert({
+        where: {
+          entityId_name_role_sourceId: { entityId, name: officer.name, role: officer.role, sourceId },
+        },
+        create: { entityId, name: officer.name, role: officer.role, countryId, sourceId },
+        update: {},
+      });
+    }
+    return officers.length;
   }
 
   /**
