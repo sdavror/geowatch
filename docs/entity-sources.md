@@ -70,6 +70,8 @@ The user's stated end goal is genuinely global coverage (explicitly called out J
 | Denmark CVR (via cvrapi.dk) | Denmark | registry | Live search request with several User-Agent formats per the docs' recommendations | Persistent 403 regardless of UA — this free third-party mirror is capped at 50 lookups/day even with a registered token, and appears to already be rate-limiting/blocking this host's IP. The real official CVR data requires registering with Erhvervsstyrelsen (Virk) for API access, a heavier lift than a quick self-service key. Deferred — not confirmed permanently dead, just not viable to build+verify live today. |
 | South Korea DART (opendart.fss.or.kr) | South Korea | registry (public/listed companies only) | Docs review; confirmed the real endpoint responds (`crtfc_key` param, proper "invalid key" error rather than 404) | Requires a **self-registered free API key** — same category as Companies House/trade.gov in principle, but (a) DART only covers publicly listed companies' financial disclosures, much narrower than a general company registry, and (b) actually obtaining the key needs the user to create an account on a Korean-language government portal. Needs the user to self-register before this is buildable, same as the trade.gov/Companies House keys were. |
 
+Also briefly probed: **Iceland** (rsk.is) — HTML search portal only, no API endpoint found; not investigated further this round.
+
 ## Candidates not yet probed (next research round)
 
 - Kazakhstan (`data.egov.kz` has a documented API v4, elasticsearch-backed — found but not yet tested live; fields look thinner than Estonia/Latvia's, e.g. no clear beneficial-owner nationality field)
