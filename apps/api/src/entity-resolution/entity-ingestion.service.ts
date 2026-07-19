@@ -11,6 +11,8 @@ import { FranceRegistryAdapter, type FranceRegistryResult } from './france-regis
 import { CanadaSemaAdapter } from './canada-sema.adapter';
 import { AustraliaDfatAdapter } from './australia-dfat.adapter';
 import { UsCslAdapter } from './us-csl.adapter';
+import { EstoniaRegistryAdapter } from './estonia-registry.adapter';
+import { LatviaRegistryAdapter } from './latvia-registry.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -68,6 +70,8 @@ export class EntityIngestionService {
     private readonly canadaSema: CanadaSemaAdapter,
     private readonly australiaDfat: AustraliaDfatAdapter,
     private readonly usCsl: UsCslAdapter,
+    private readonly estoniaRegistry: EstoniaRegistryAdapter,
+    private readonly latviaRegistry: LatviaRegistryAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -132,6 +136,24 @@ export class EntityIngestionService {
       await this.ingestUsCsl();
     } catch (err) {
       this.logger.error(`Scheduled US CSL entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 30 7 * * 1') // Mondays 07:30 UTC — staggered after US CSL
+  async scheduledEstoniaRegistryRefresh() {
+    try {
+      await this.ingestEstoniaRegistry();
+    } catch (err) {
+      this.logger.error(`Scheduled Estonia registry entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 0 8 * * 1') // Mondays 08:00 UTC — staggered after Estonia
+  async scheduledLatviaRegistryRefresh() {
+    try {
+      await this.ingestLatviaRegistry();
+    } catch (err) {
+      this.logger.error(`Scheduled Latvia registry entity ingestion failed: ${(err as Error).message}`);
     }
   }
 
@@ -404,6 +426,85 @@ export class EntityIngestionService {
     const summary = { processed: entities.length, created, merged };
     this.logger.log(
       `US CSL entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * Estonia's e-Business Register beneficial-ownership file, filtered to
+   * companies with a RU/UA/BY-resident beneficial owner (see
+   * estonia-registry.adapter.ts). No sanctions payload — these companies
+   * aren't themselves designated, this is an ownership-network signal, not
+   * a sanctions list. Every record carries its own reg_number@EE
+   * identifier, so this never reaches Phase 2/3 fuzzy or LLM matching (per
+   * the existing "only fires when a record has zero identifiers" rule).
+   */
+  async ingestEstoniaRegistry(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'Estonia e-Business Register',
+      'https://avaandmed.ariregister.rik.ee/en/downloading-open-data',
+      'company',
+    );
+    const entities = await this.estoniaRegistry.fetchBeneficialOwnershipLinkedCompanies();
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: [],
+        identifiers: [{ type: 'reg_number', value: e.externalId, countryId: 'EE' }],
+        primaryCountryId: 'EE',
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `Estonia registry entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * Latvia's Enterprise Register, same shape as Estonia: filtered to
+   * companies with a RU/UA/BY beneficial owner, no sanctions payload (an
+   * ownership-network signal, not a designation). See
+   * latvia-registry.adapter.ts for the two-file join this requires.
+   */
+  async ingestLatviaRegistry(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'Latvia Enterprise Register',
+      'https://data.gov.lv/dati/eng/dataset/patiesie-labuma-guveji',
+      'company',
+    );
+    const entities = await this.latviaRegistry.fetchBeneficialOwnershipLinkedCompanies();
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: [],
+        identifiers: [{ type: 'reg_number', value: e.externalId, countryId: 'LV' }],
+        primaryCountryId: 'LV',
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `Latvia registry entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
     );
     return summary;
   }
