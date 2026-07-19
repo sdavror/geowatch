@@ -63,6 +63,16 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestUsCsl();
   }
 
+  @Post('ingest/estonia-registry')
+  ingestEstoniaRegistry() {
+    return this.ingestion.ingestEstoniaRegistry();
+  }
+
+  @Post('ingest/latvia-registry')
+  ingestLatviaRegistry() {
+    return this.ingestion.ingestLatviaRegistry();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);
