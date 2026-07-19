@@ -6,12 +6,14 @@ import { GleifAdapter } from './gleif.adapter';
 import { EuSanctionsAdapter } from './eu-sanctions.adapter';
 import { OfsiAdapter } from './ofsi.adapter';
 import { SecEdgarAdapter } from './sec-edgar.adapter';
+import { CompaniesHouseAdapter } from './companies-house.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
   type IdentifierType,
   type LlmBudget,
 } from './entity-resolution.service';
+import { normalizeCompanyName, bigramSimilarity } from './name-similarity.util';
 
 // Local 14B inference takes real seconds per call — bounds one ingestion
 // run's LLM usage so a large batch (thousands of records, most of which
@@ -57,6 +59,7 @@ export class EntityIngestionService {
     private readonly euSanctions: EuSanctionsAdapter,
     private readonly ofsi: OfsiAdapter,
     private readonly secEdgar: SecEdgarAdapter,
+    private readonly companiesHouse: CompaniesHouseAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -364,6 +367,58 @@ export class EntityIngestionService {
     const record = this.gleifRecordToNormalized(top);
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, lei: top.lei, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against the UK company register — same shape as
+   * enrichWithGleif: search is a discovery mechanism, the actual merge
+   * still goes through identifier equality (company_number, scoped to GB).
+   * Prefers an 'active' search hit over a dissolved one when both exist,
+   * since a dissolved shell with a similar name is a common false lead.
+   */
+  async enrichWithCompaniesHouse(
+    entityId: string,
+  ): Promise<{ found: boolean; companyNumber?: string; matchedExisting?: boolean }> {
+    if (!this.companiesHouse.configured) {
+      throw new Error('COMPANIES_HOUSE_API_KEY is not configured');
+    }
+    const entity = await this.prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
+    const source = await this.getOrCreateSource(
+      'UK Companies House',
+      'https://api.company-information.service.gov.uk',
+      'company',
+    );
+    const results = await this.companiesHouse.searchByName(entity.canonicalName);
+    if (results.length === 0) return { found: false };
+
+    // Real bug this replaced: blindly preferring an 'active' result over a
+    // 'dissolved' one picked an entirely unrelated company for "PUBLIC
+    // JOINT STOCK COMPANY GAZPROM NEFT" — the genuinely correct match
+    // (Gazprom Neft's own UK-registered entity) was dissolved, and CH's
+    // search returns plenty of coincidentally-similar active companies
+    // sharing generic boilerplate ("Public Joint Stock Company"). Score by
+    // name similarity instead — status is irrelevant to "is this actually
+    // the same company," only to whether it's still trading.
+    const targetName = normalizeCompanyName(entity.canonicalName);
+    const scored = results
+      .map((r) => ({ r, score: bigramSimilarity(targetName, normalizeCompanyName(r.name)) }))
+      .sort((a, b) => b.score - a.score);
+    const best = scored[0];
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.companiesHouse.fetchProfile(best.r.companyNumber);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.companyNumber,
+      name: profile.name,
+      aliases: profile.previousNames,
+      identifiers: [{ type: 'reg_number', value: profile.companyNumber, countryId: 'GB' }],
+      primaryCountryId: profile.countryIso2 ?? 'GB',
+      raw: profile,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, companyNumber: profile.companyNumber, matchedExisting: result.entityId === entityId };
   }
 
   /**
