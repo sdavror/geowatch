@@ -415,6 +415,7 @@ export class EntityIngestionService {
         identifiers,
         sanctions: e.programs.map((p) => ({ regime: `US CSL (${e.sourceAbbrev})`, program: p })),
         primaryCountryId: e.countryIso2,
+        profile: { addressLine: e.addressLine, addressCity: e.addressCity, addressPostalCode: e.addressPostalCode },
         raw: e.raw,
       };
       const result = await this.resolution.resolve(record, source.id, llmBudget);
@@ -456,6 +457,7 @@ export class EntityIngestionService {
         aliases: [],
         identifiers: [{ type: 'reg_number', value: e.externalId, countryId: 'EE' }],
         primaryCountryId: 'EE',
+        officers: e.owners.map((o) => ({ name: o.name, role: 'beneficial_owner' as const, countryId: o.countryIso2 })),
         raw: e.raw,
       };
       const result = await this.resolution.resolve(record, source.id);
@@ -494,6 +496,7 @@ export class EntityIngestionService {
         aliases: [],
         identifiers: [{ type: 'reg_number', value: e.externalId, countryId: 'LV' }],
         primaryCountryId: 'LV',
+        officers: e.owners.map((o) => ({ name: o.name, role: 'beneficial_owner' as const, countryId: o.countryIso2 })),
         raw: e.raw,
       };
       const result = await this.resolution.resolve(record, source.id);
@@ -604,15 +607,18 @@ export class EntityIngestionService {
    * Significant Control) for an entity's known GB company number, and links
    * each active corporate-entity PSC as a parent via EntityRelationship —
    * same shape as enrichRelationshipsWithGleif. Individual-person PSCs (real
-   * people) are deliberately NOT linked: Entity.entityType only supports
-   * 'company', and modelling a Person is a schema decision, not something
-   * to bolt on silently while adding a source. Requires the entity to
-   * already carry a reg_number@GB identifier (run enrich/:id/companies-house
-   * first if it doesn't have one yet).
+   * people) are NOT linked as parent Entities — Entity.entityType only
+   * supports 'company', and modelling a Person as a full cross-source
+   * Entity is a bigger schema decision than adding a source. Instead they
+   * become an EntityOfficer fact record (role='beneficial_owner') on this
+   * entity — a per-source "who Companies House says controls this company"
+   * note, not an identity-resolved person. Requires the entity to already
+   * carry a reg_number@GB identifier (run enrich/:id/companies-house first
+   * if it doesn't have one yet).
    */
   async enrichPscWithCompaniesHouse(
     entityId: string,
-  ): Promise<{ companyNumber: string | null; parentsLinked: number; individualPscsSkipped: number }> {
+  ): Promise<{ companyNumber: string | null; parentsLinked: number; officersAdded: number }> {
     if (!this.companiesHouse.configured) {
       throw new Error('COMPANIES_HOUSE_API_KEY is not configured');
     }
@@ -620,7 +626,7 @@ export class EntityIngestionService {
       where: { entityId, type: 'reg_number', countryId: 'GB' },
       select: { value: true },
     });
-    if (!regRow) return { companyNumber: null, parentsLinked: 0, individualPscsSkipped: 0 };
+    if (!regRow) return { companyNumber: null, parentsLinked: 0, officersAdded: 0 };
 
     const source = await this.getOrCreateSource(
       'UK Companies House',
@@ -630,11 +636,23 @@ export class EntityIngestionService {
     const pscs = await this.companiesHouse.fetchPsc(regRow.value);
 
     let parentsLinked = 0;
-    let individualPscsSkipped = 0;
+    let officersAdded = 0;
     for (const psc of pscs) {
       if (psc.ceased) continue;
       if (psc.kind !== 'corporate-entity-person-with-significant-control') {
-        individualPscsSkipped++;
+        await this.prisma.entityOfficer.upsert({
+          where: {
+            entityId_name_role_sourceId: {
+              entityId,
+              name: psc.name,
+              role: 'beneficial_owner',
+              sourceId: source.id,
+            },
+          },
+          create: { entityId, name: psc.name, role: 'beneficial_owner', countryId: psc.countryIso2, sourceId: source.id },
+          update: {},
+        });
+        officersAdded++;
         continue;
       }
       const identifiers: NormalizedEntityRecord['identifiers'] = psc.registrationNumber
@@ -658,7 +676,7 @@ export class EntityIngestionService {
       parentsLinked++;
     }
 
-    return { companyNumber: regRow.value, parentsLinked, individualPscsSkipped };
+    return { companyNumber: regRow.value, parentsLinked, officersAdded };
   }
 
   private gleifRecordToNormalized(g: {
@@ -750,7 +768,14 @@ export class EntityIngestionService {
       aliases: profile.previousNames,
       identifiers: [{ type: 'reg_number', value: profile.companyNumber, countryId: 'GB' }],
       primaryCountryId: profile.countryIso2 ?? 'GB',
-      raw: profile,
+      profile: {
+        status: this.companiesHouse.normalizeStatus(profile.status),
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+        industryCode: profile.sicCode,
+      },
+      raw: profile.raw,
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, companyNumber: profile.companyNumber, matchedExisting: result.entityId === entityId };
@@ -811,7 +836,15 @@ export class EntityIngestionService {
       aliases: profile.sigle ? [profile.sigle] : [],
       identifiers: [{ type: 'reg_number', value: profile.siren, countryId: 'FR' }],
       primaryCountryId: profile.countryIso2 ?? 'FR',
-      raw: profile,
+      profile: {
+        status: profile.active ? 'active' : 'dissolved',
+        industryCode: profile.industryCode,
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+      },
+      officers: profile.directors.map((d) => ({ name: d.name, role: 'director' as const })),
+      raw: profile.raw,
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, siren: profile.siren, matchedExisting: result.entityId === entityId };
@@ -838,6 +871,119 @@ export class EntityIngestionService {
     // tool / future article-mention linking), not a batch job, so one LLM
     // call is the natural cap rather than borrowing the ingestion-sized one.
     return this.resolution.resolve(record, source.id, { remaining: 1 });
+  }
+
+  /**
+   * One-time (idempotent, safe to re-run) backfill of the Track A company-
+   * profile fields for entities ingested before those fields existed. Two
+   * approaches depending on what each source's already-stored rawPayload
+   * actually contains:
+   *  - US CSL and Estonia kept their FULL raw API/file record from the
+   *    start, so this re-parses what's already in Postgres — zero new HTTP
+   *    calls.
+   *  - Companies House, France SIRENE, and (for officer names specifically)
+   *    Latvia only ever stored a mapped subset — the on-demand
+   *    enrichment/ingestion methods are simply re-run for the (small)
+   *    existing entity set, using the now-extended adapters, rather than
+   *    inventing a second parser for data that was never persisted.
+   */
+  async backfillCompanyProfile(): Promise<{
+    usCsl: { scanned: number; profilesFilled: number };
+    estonia: { scanned: number; officersAdded: number };
+    companiesHouse: { entities: number; profilesFilled: number; officersAdded: number };
+    franceRegistry: { entities: number; profilesFilled: number };
+    latvia: IngestSummary;
+  }> {
+    const usCslSource = await this.prisma.source.findFirst({ where: { name: 'US Consolidated Screening List' } });
+    let usCslScanned = 0;
+    let usCslFilled = 0;
+    if (usCslSource) {
+      const links = await this.prisma.entitySourceLink.findMany({
+        where: { sourceId: usCslSource.id },
+        select: { entityId: true, rawPayload: true },
+      });
+      for (const link of links) {
+        usCslScanned++;
+        const profile = this.usCsl.extractAddressFromRaw(link.rawPayload);
+        if (profile.addressLine || profile.addressCity || profile.addressPostalCode) {
+          await this.resolution.fillProfileFields(link.entityId, profile);
+          usCslFilled++;
+        }
+      }
+    }
+
+    const estoniaSource = await this.prisma.source.findFirst({ where: { name: 'Estonia e-Business Register' } });
+    let estoniaScanned = 0;
+    let estoniaOfficersAdded = 0;
+    if (estoniaSource) {
+      const links = await this.prisma.entitySourceLink.findMany({
+        where: { sourceId: estoniaSource.id },
+        select: { entityId: true, rawPayload: true },
+      });
+      for (const link of links) {
+        estoniaScanned++;
+        const officers = this.estoniaRegistry.extractOfficersFromRaw(link.rawPayload);
+        if (officers.length) {
+          estoniaOfficersAdded += await this.resolution.addOfficers(
+            link.entityId,
+            estoniaSource.id,
+            officers.map((o) => ({ name: o.name, role: 'beneficial_owner' as const, countryId: o.countryIso2 })),
+          );
+        }
+      }
+    }
+
+    const ghEntities = await this.prisma.entityIdentifier.findMany({
+      where: { type: 'reg_number', countryId: 'GB' },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    let chProfilesFilled = 0;
+    let chOfficersAdded = 0;
+    for (const { entityId } of ghEntities) {
+      const before = await this.prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
+      await this.enrichWithCompaniesHouse(entityId).catch((err) =>
+        this.logger.warn(`CH profile backfill for ${entityId} failed: ${(err as Error).message}`),
+      );
+      const after = await this.prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
+      if (after.addressLine !== before.addressLine || after.status !== before.status) chProfilesFilled++;
+      const psc = await this.enrichPscWithCompaniesHouse(entityId).catch((err) => {
+        this.logger.warn(`CH PSC backfill for ${entityId} failed: ${(err as Error).message}`);
+        return null;
+      });
+      if (psc) chOfficersAdded += psc.officersAdded;
+    }
+
+    const frEntities = await this.prisma.entityIdentifier.findMany({
+      where: { type: 'reg_number', countryId: 'FR' },
+      select: { entityId: true },
+      distinct: ['entityId'],
+    });
+    let frProfilesFilled = 0;
+    for (const { entityId } of frEntities) {
+      const before = await this.prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
+      await this.enrichWithFranceRegistry(entityId).catch((err) =>
+        this.logger.warn(`France registry backfill for ${entityId} failed: ${(err as Error).message}`),
+      );
+      const after = await this.prisma.entity.findUniqueOrThrow({ where: { id: entityId } });
+      if (after.addressLine !== before.addressLine || after.industryCode !== before.industryCode) frProfilesFilled++;
+    }
+
+    // Latvia's stored raw never had owner names (only the register row) —
+    // re-running the standard bulk ingest is cheap (two CSV downloads, not
+    // per-entity calls) and idempotent, and now populates officers thanks
+    // to the adapter change above.
+    const latviaSummary = await this.ingestLatviaRegistry();
+
+    const summary = {
+      usCsl: { scanned: usCslScanned, profilesFilled: usCslFilled },
+      estonia: { scanned: estoniaScanned, officersAdded: estoniaOfficersAdded },
+      companiesHouse: { entities: ghEntities.length, profilesFilled: chProfilesFilled, officersAdded: chOfficersAdded },
+      franceRegistry: { entities: frEntities.length, profilesFilled: frProfilesFilled },
+      latvia: latviaSummary,
+    };
+    this.logger.log(`Company-profile backfill complete: ${JSON.stringify(summary)}`);
+    return summary;
   }
 
   private async getOrCreateSource(name: string, url: string, entityType: string) {

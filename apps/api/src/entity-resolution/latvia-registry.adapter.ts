@@ -17,15 +17,26 @@ const REGISTER_URL =
 // company even if they've relocated elsewhere, not just current residents.
 const SCOPE_COUNTRIES = new Set(['RU', 'UA', 'BY']);
 
+// A handful of dual-nationality/dual-residence owners store multiple ISO2
+// codes joined by this file's own `;` delimiter inside one quoted field
+// (e.g. `"IL;RU"`) — split before checking scope membership.
+function splitCodes(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw.split(';').map((c) => c.trim()).filter(Boolean);
+}
+
 export interface LatviaLinkedCompany {
   externalId: string; // regcode (Latvian registration number), as string
   name: string;
   ownerCountries: string[]; // ISO2 nationality/residence of the in-scope beneficial owner(s)
+  owners: Array<{ name: string; countryIso2: string | null }>; // in-scope owners only
   raw: unknown;
 }
 
 interface RawBeneficialOwner {
   legal_entity_registration_number: string;
+  forename?: string;
+  surname?: string;
   nationality?: string;
   residence?: string;
 }
@@ -58,14 +69,32 @@ export class LatviaRegistryAdapter {
     }) as RawBeneficialOwner[];
 
     const ownerCountriesByRegcode = new Map<string, Set<string>>();
+    const ownersByRegcode = new Map<string, Array<{ name: string; countryIso2: string | null }>>();
     for (const row of ownersRows) {
-      const countries = [row.nationality, row.residence].filter(
-        (c): c is string => !!c && SCOPE_COUNTRIES.has(c),
-      );
-      if (countries.length === 0) continue;
+      // Real bug found live: dual-nationality owners store BOTH codes in one
+      // semicolon-joined field inside quotes (e.g. `"IL;RU"`) — since this
+      // file's own delimiter IS `;`, a naive equality check against
+      // SCOPE_COUNTRIES misses an in-scope code hiding inside a compound
+      // value, AND passing the raw 5-char compound straight into a
+      // CHAR(2) column crashed the whole ingestion run. Split on `;` and
+      // check each individual code.
+      const inScopeCodes = [
+        ...splitCodes(row.nationality).filter((c) => SCOPE_COUNTRIES.has(c)),
+        ...splitCodes(row.residence).filter((c) => SCOPE_COUNTRIES.has(c)),
+      ];
+      if (inScopeCodes.length === 0) continue;
       const set = ownerCountriesByRegcode.get(row.legal_entity_registration_number) ?? new Set<string>();
-      countries.forEach((c) => set.add(c));
+      inScopeCodes.forEach((c) => set.add(c));
       ownerCountriesByRegcode.set(row.legal_entity_registration_number, set);
+
+      if (row.forename || row.surname) {
+        const owners = ownersByRegcode.get(row.legal_entity_registration_number) ?? [];
+        owners.push({
+          name: [row.forename, row.surname].filter(Boolean).join(' '),
+          countryIso2: inScopeCodes[0],
+        });
+        ownersByRegcode.set(row.legal_entity_registration_number, owners);
+      }
     }
     if (ownerCountriesByRegcode.size === 0) return [];
 
@@ -82,7 +111,13 @@ export class LatviaRegistryAdapter {
     for (const row of registerRows) {
       const ownerCountries = ownerCountriesByRegcode.get(row.regcode);
       if (!ownerCountries || !row.name) continue;
-      out.push({ externalId: row.regcode, name: row.name, ownerCountries: [...ownerCountries], raw: row });
+      out.push({
+        externalId: row.regcode,
+        name: row.name,
+        ownerCountries: [...ownerCountries],
+        owners: ownersByRegcode.get(row.regcode) ?? [],
+        raw: row,
+      });
     }
 
     this.logger.log(

@@ -47,6 +47,7 @@ export class EntitiesController {
         aliases: { include: { source: { select: { name: true } } } },
         identifiers: { include: { source: { select: { name: true } } } },
         sanctions: { include: { source: { select: { name: true } } } },
+        officers: { include: { source: { select: { name: true } } } },
         sourceLinks: { select: { externalId: true, fetchedAt: true, source: { select: { name: true } } } },
         // Both directions: who owns this entity, and what it owns.
         relationshipsAsChild: { include: { parent: { select: { id: true, canonicalName: true } } } },

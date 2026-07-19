@@ -100,6 +100,12 @@ export class EntityResolutionAdminController {
     return this.ingestion.enrichPscWithCompaniesHouse(entityId);
   }
 
+  /** One-time (safe to re-run) backfill of the Track A company-profile fields for entities ingested before those fields existed. */
+  @Post('backfill/company-profile')
+  backfillCompanyProfile() {
+    return this.ingestion.backfillCompanyProfile();
+  }
+
   /** Resolves a bare name (no identifiers) — verification tool now, seed for article-mention linking later. */
   @Post('resolve-by-name')
   resolveByName(@Body() dto: ResolveByNameDto) {

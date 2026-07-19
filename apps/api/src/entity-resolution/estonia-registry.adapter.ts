@@ -26,10 +26,13 @@ export interface EstoniaLinkedCompany {
   externalId: string; // ariregistri_kood (Estonian registration code), as string
   name: string;
   ownerCountries: string[]; // ISO2 residence countries of the in-scope beneficial owner(s)
+  owners: Array<{ name: string; countryIso2: string | null }>; // in-scope owners only
   raw: unknown;
 }
 
 interface RawBeneficialOwner {
+  nimi?: string; // surname
+  eesnimi?: string; // first name
   aadress_riik?: string | null;
 }
 
@@ -65,21 +68,41 @@ export class EstoniaRegistryAdapter {
     const out: EstoniaLinkedCompany[] = [];
 
     for (const c of companies) {
-      const ownerCountries = [
-        ...new Set(
-          (c.kasusaajad ?? [])
-            .map((o) => (o.aadress_riik ? OWNER_COUNTRY_SCOPE[o.aadress_riik] : undefined))
-            .filter((v): v is string => Boolean(v)),
-        ),
-      ];
-      if (ownerCountries.length === 0) continue;
-      out.push({ externalId: String(c.ariregistri_kood), name: c.nimi, ownerCountries, raw: c });
+      const inScopeOwners = (c.kasusaajad ?? []).filter(
+        (o) => o.aadress_riik && OWNER_COUNTRY_SCOPE[o.aadress_riik],
+      );
+      if (inScopeOwners.length === 0) continue;
+      const ownerCountries = [...new Set(inScopeOwners.map((o) => OWNER_COUNTRY_SCOPE[o.aadress_riik!]))];
+      const owners = inScopeOwners
+        .filter((o) => o.nimi || o.eesnimi)
+        .map((o) => ({
+          name: [o.eesnimi, o.nimi].filter(Boolean).join(' '),
+          countryIso2: OWNER_COUNTRY_SCOPE[o.aadress_riik!] ?? null,
+        }));
+      out.push({ externalId: String(c.ariregistri_kood), name: c.nimi, ownerCountries, owners, raw: c });
     }
 
     this.logger.log(
       `Estonia e-Business Register: ${companies.length} companies scanned → ${out.length} with a RU/UA/BY-resident beneficial owner`,
     );
     return out;
+  }
+
+  /**
+   * Re-derives the in-scope beneficial owners from an already-stored
+   * EntitySourceLink.rawPayload — used by the one-time company-profile
+   * backfill so it doesn't need to re-download the full register just to
+   * get owner names that were always present in the raw JSON but never
+   * extracted into EntityOfficer before this field existed.
+   */
+  extractOfficersFromRaw(raw: unknown): Array<{ name: string; countryIso2: string | null }> {
+    const company = raw as RawCompany;
+    return (company.kasusaajad ?? [])
+      .filter((o) => o.aadress_riik && OWNER_COUNTRY_SCOPE[o.aadress_riik] && (o.nimi || o.eesnimi))
+      .map((o) => ({
+        name: [o.eesnimi, o.nimi].filter(Boolean).join(' '),
+        countryIso2: OWNER_COUNTRY_SCOPE[o.aadress_riik!] ?? null,
+      }));
   }
 
   /**

@@ -13,6 +13,15 @@ export interface FranceRegistryResult {
   sigle: string | null;
   active: boolean;
   countryIso2: string | null; // best-effort from siege address; 'FR' when domestic
+  industryCode: string | null; // NAF/APE code, e.g. "68.20B" — no human label fetched (would need the full NAF nomenclature table)
+  addressLine: string | null;
+  addressCity: string | null;
+  addressPostalCode: string | null;
+  // Real reported directors/managers ("dirigeants") — INSEE/RNE sourced,
+  // not a guess. `qualite` (e.g. "Gérant", "Président") is kept as-is,
+  // untranslated, same spirit as industryCode having no cross-source label.
+  directors: Array<{ name: string; role: string }>;
+  raw: unknown;
 }
 
 // SIRENE also carries foreign companies that once registered a French
@@ -41,6 +50,16 @@ const FR_COUNTRY_NAME_TO_ISO2: Record<string, string> = {
 interface RawSiege {
   code_pays_etranger: string | null;
   libelle_pays_etranger: string | null;
+  adresse: string | null;
+  libelle_commune: string | null;
+  code_postal: string | null;
+}
+
+interface RawDirigeant {
+  nom?: string;
+  prenoms?: string;
+  qualite?: string;
+  type_dirigeant?: string; // 'personne physique' | 'personne morale'
 }
 
 interface RawResult {
@@ -48,7 +67,9 @@ interface RawResult {
   nom_complet: string;
   sigle: string | null;
   etat_administratif: string;
+  activite_principale: string | null;
   siege: RawSiege | null;
+  dirigeants?: RawDirigeant[];
 }
 
 @Injectable()
@@ -69,6 +90,18 @@ export class FranceRegistryAdapter {
       sigle: r.sigle,
       active: r.etat_administratif === 'A',
       countryIso2: this.countryFromSiege(r.siege),
+      industryCode: r.activite_principale,
+      addressLine: r.siege?.adresse ?? null,
+      addressCity: r.siege?.libelle_commune ?? null,
+      addressPostalCode: r.siege?.code_postal ?? null,
+      // Only 'personne physique' (real individuals) map onto EntityOfficer —
+      // a 'personne morale' director is itself a company and belongs in the
+      // ownership graph (EntityRelationship), not this fact-record list;
+      // out of scope here since that would mean resolving it as an Entity.
+      directors: (r.dirigeants ?? [])
+        .filter((d) => d.type_dirigeant === 'personne physique' && (d.nom || d.prenoms))
+        .map((d) => ({ name: [d.prenoms, d.nom].filter(Boolean).join(' '), role: d.qualite ?? 'dirigeant' })),
+      raw: r,
     };
   }
 

@@ -20,7 +20,24 @@ export interface CompaniesHouseProfile {
   status: string;
   previousNames: string[];
   countryIso2: string | null; // best-effort from registered_office_address.country
+  addressLine: string | null;
+  addressCity: string | null;
+  addressPostalCode: string | null;
+  sicCode: string | null; // first SIC code, if any — CH gives no human-readable label for these
+  raw: unknown; // full API response, kept for backfill/audit (the mapped fields above used to BE the raw payload — real gap this fixes)
 }
+
+// Companies House's own free-text company_status values, normalized onto
+// this project's fixed active|dissolved|liquidated|unknown set. "In
+// administration"/"receivership"/"voluntary-arrangement" are insolvency
+// proceedings short of full liquidation — closest honest bucket is
+// 'unknown' rather than overstating them as 'active'.
+const CH_STATUS_MAP: Record<string, string> = {
+  active: 'active',
+  dissolved: 'dissolved',
+  liquidation: 'liquidated',
+  'converted-closed': 'dissolved',
+};
 
 // A "Person with Significant Control" — real beneficial-ownership data, not
 // a guess. Only the corporate-entity kind maps onto this project's Entity
@@ -107,16 +124,33 @@ export class CompaniesHouseAdapter {
       company_number: string;
       company_status: string;
       previous_company_names?: Array<{ name: string }>;
-      registered_office_address?: { country?: string };
+      registered_office_address?: {
+        country?: string;
+        address_line_1?: string;
+        address_line_2?: string;
+        locality?: string;
+        postal_code?: string;
+      };
+      sic_codes?: string[];
     };
     const countryName = d.registered_office_address?.country?.trim().toLowerCase();
+    const addr = d.registered_office_address;
     return {
       companyNumber: d.company_number,
       name: d.company_name,
       status: d.company_status,
       previousNames: (d.previous_company_names ?? []).map((n) => n.name),
       countryIso2: countryName ? (CH_COUNTRY_TO_ISO2[countryName] ?? null) : null,
+      addressLine: [addr?.address_line_1, addr?.address_line_2].filter(Boolean).join(', ') || null,
+      addressCity: addr?.locality ?? null,
+      addressPostalCode: addr?.postal_code ?? null,
+      sicCode: d.sic_codes?.[0] ?? null,
+      raw: d,
     };
+  }
+
+  normalizeStatus(status: string): string {
+    return CH_STATUS_MAP[status] ?? 'unknown';
   }
 
   async fetchPsc(companyNumber: string): Promise<CompaniesHousePsc[]> {

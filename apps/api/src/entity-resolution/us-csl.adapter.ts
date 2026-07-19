@@ -83,6 +83,9 @@ export interface CslEntity {
   sourceAbbrev: string;
   identifiers: CslIdentifierCandidate[];
   countryIso2: string | null; // best-effort from addresses[0].country — already ISO2, no name-mapping needed
+  addressLine: string | null;
+  addressCity: string | null;
+  addressPostalCode: string | null;
   raw: unknown;
 }
 
@@ -97,7 +100,7 @@ interface RawCslRecord {
   places_of_birth?: unknown[];
   citizenships?: unknown[];
   nationalities?: unknown[];
-  addresses?: Array<{ country?: string | null }>;
+  addresses?: Array<{ country?: string | null; address?: string; city?: string; postal_code?: string }>;
   ids?: Array<{ type: string; country: string | null; number: string }>;
 }
 
@@ -138,7 +141,8 @@ export class UsCslAdapter {
   }
 
   private toEntity(r: RawCslRecord): CslEntity {
-    const countryIso2 = normalizeCountry(r.addresses?.find((a) => a.country)?.country ?? null);
+    const address = r.addresses?.[0];
+    const countryIso2 = normalizeCountry(address?.country ?? null);
     const identifiers: CslIdentifierCandidate[] = (r.ids ?? [])
       .filter((i) => REG_NUMBER_ID_TYPES.has(i.type) || TAX_ID_TYPES.has(i.type))
       .filter((i) => i.number)
@@ -152,6 +156,9 @@ export class UsCslAdapter {
       sourceAbbrev: r.id.split('-')[0],
       identifiers,
       countryIso2,
+      addressLine: address?.address || null,
+      addressCity: address?.city || null,
+      addressPostalCode: address?.postal_code || null,
       raw: r,
     };
   }
@@ -218,5 +225,21 @@ export class UsCslAdapter {
       `US CSL (non-SDN lists): ${seen.size} company records in RU/UA/BY scope, ${individualsSkipped} individual records skipped${truncatedCombos ? `, ${truncatedCombos} source/country combo(s) hit the pagination ceiling` : ''}`,
     );
     return [...seen.values()];
+  }
+
+  /**
+   * Re-derives address fields from an already-stored EntitySourceLink.raw
+   * (the full API record was always kept as-is here, unlike some other
+   * adapters that only preserved a mapped subset) — lets the one-time
+   * company-profile backfill run with zero new HTTP calls for this source.
+   */
+  extractAddressFromRaw(raw: unknown): { addressLine: string | null; addressCity: string | null; addressPostalCode: string | null } {
+    const r = raw as RawCslRecord;
+    const address = r.addresses?.[0];
+    return {
+      addressLine: address?.address || null,
+      addressCity: address?.city || null,
+      addressPostalCode: address?.postal_code || null,
+    };
   }
 }

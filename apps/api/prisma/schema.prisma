@@ -322,6 +322,7 @@ model Source {
   entitySourceLinks EntitySourceLink[]
   entitySanctions   EntitySanction[]
   entityRelationships EntityRelationship[]
+  entityOfficers    EntityOfficer[]
 
   @@map("sources")
 }
@@ -364,6 +365,20 @@ model Entity {
   // fuzzy-match candidate pool to a sane size (comparing a new record
   // against every entity on file wouldn't scale past a few thousand rows).
   primaryCountryId String?  @map("primary_country_id") @db.Char(2)
+  // ── Company profile fields (Track A schema expansion) ──
+  // All sparse-by-source: not every source's raw payload has these, so most
+  // stay null for entities from identifier-only sources (OFAC/EU/OFSI/Canada
+  // /Australia). Populated by backfill (A2) and future adapter runs (A3).
+  website           String? @db.VarChar(255)
+  // Normalized, not a free-text passthrough — source-specific status strings
+  // (e.g. Companies House "active"/"dissolved", France's "actif"/"cesse")
+  // are mapped onto this fixed set by each adapter.
+  status            String? @db.VarChar(20) // active | dissolved | liquidated | unknown
+  industryCode      String? @map("industry_code") @db.VarChar(32) // source-native code (SIC, NAF...), not cross-source-normalized
+  industryLabel     String? @map("industry_label")
+  addressLine       String? @map("address_line")
+  addressCity       String? @map("address_city") @db.VarChar(100)
+  addressPostalCode String? @map("address_postal_code") @db.VarChar(20)
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
@@ -371,6 +386,7 @@ model Entity {
   aliases      EntityAlias[]
   sourceLinks  EntitySourceLink[]
   sanctions    EntitySanction[]
+  officers     EntityOfficer[]
   reviewsAsA   EntityMergeReview[] @relation("MergeReviewA")
   reviewsAsB   EntityMergeReview[] @relation("MergeReviewB")
   relationshipsAsParent EntityRelationship[] @relation("RelationshipParent")
@@ -378,6 +394,36 @@ model Entity {
 
   @@index([primaryCountryId])
   @@map("entities")
+}
+
+enum OfficerRole {
+  director
+  beneficial_owner
+  officer
+}
+
+// A per-source fact record of "who this source says is associated with this
+// entity" — deliberately NOT a full Entity/Person with cross-source identity
+// resolution (that's a much bigger schema decision, left open). Two sources
+// reporting the same real person produce two separate rows here; nothing
+// folds them together. This exists purely to surface "directors (where
+// available)" in a company profile without reopening that decision.
+model EntityOfficer {
+  id        String      @id @default(uuid()) @db.Uuid
+  entityId  String      @map("entity_id") @db.Uuid
+  entity    Entity      @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  name      String
+  role      OfficerRole
+  countryId String?     @map("country_id") @db.Char(2)
+  sourceId  String      @map("source_id") @db.Uuid
+  source    Source      @relation(fields: [sourceId], references: [id])
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  // Prevents duplicate rows on re-ingest of the same source (no per-officer
+  // external id exists in most sources, so identity = this tuple).
+  @@unique([entityId, name, role, sourceId])
+  @@index([entityId])
+  @@map("entity_officers")
 }
 
 enum MergeReviewStatus {
