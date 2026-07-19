@@ -15,6 +15,7 @@ import { EstoniaRegistryAdapter } from './estonia-registry.adapter';
 import { LatviaRegistryAdapter } from './latvia-registry.adapter';
 import { NorwayBrregAdapter } from './norway-brreg.adapter';
 import { FinlandYtjAdapter } from './finland-ytj.adapter';
+import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -76,6 +77,7 @@ export class EntityIngestionService {
     private readonly latviaRegistry: LatviaRegistryAdapter,
     private readonly norwayBrreg: NorwayBrregAdapter,
     private readonly finlandYtj: FinlandYtjAdapter,
+    private readonly switzerlandZefix: SwitzerlandZefixAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -973,6 +975,58 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, businessId: profile.businessId, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Switzerland's Zefix central business-name
+   * index — same shape as enrichWithNorwayRegistry/enrichWithFinlandRegistry.
+   * Confirmed live 2026-07-20 via the frontend's own undocumented (but
+   * keyless, no-auth) API — the official documented API requires a paid
+   * subscription. Deliberately sparse: Zefix is a national NAME INDEX, not
+   * the full commercial register, so it has no street address, industry
+   * code, website, or officer data — just UID, registered canton/commune,
+   * and status. Still useful given Switzerland's relevance as a common
+   * holding/trading jurisdiction for exactly the kind of company this
+   * project tracks.
+   */
+  async enrichWithSwitzerlandRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; uid?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Switzerland Zefix', 'https://www.zefix.ch', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { ehraid: number; name: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      const query = normalizeCompanyName(candidateName);
+      if (!query) continue;
+      const results = await this.switzerlandZefix.searchByName(query);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.switzerlandZefix.fetchProfile(best.r.ehraid);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: String(profile.ehraid),
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.uid, countryId: 'CH' }],
+      primaryCountryId: 'CH',
+      profile: { status: profile.status, addressCity: profile.addressCity },
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, uid: profile.uid, matchedExisting: result.entityId === entityId };
   }
 
   /**

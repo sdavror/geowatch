@@ -19,6 +19,7 @@ import { EstoniaRegistryAdapter } from './estonia-registry.adapter';
 import { LatviaRegistryAdapter } from './latvia-registry.adapter';
 import { NorwayBrregAdapter } from './norway-brreg.adapter';
 import { FinlandYtjAdapter } from './finland-ytj.adapter';
+import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -43,6 +44,7 @@ import { OllamaClient } from '../analysis/ollama.client';
     LatviaRegistryAdapter,
     NorwayBrregAdapter,
     FinlandYtjAdapter,
+    SwitzerlandZefixAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })
