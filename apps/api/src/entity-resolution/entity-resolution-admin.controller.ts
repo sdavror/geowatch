@@ -103,6 +103,11 @@ export class EntityResolutionAdminController {
     return this.ingestion.enrichWithSwitzerlandRegistry(entityId);
   }
 
+  @Post('enrich/:entityId/slovakia-registry')
+  enrichSlovakiaRegistry(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichWithSlovakiaRegistry(entityId);
+  }
+
   /** Requires the entity to already have an LEI (run enrich/:id/gleif first if needed). */
   @Post('enrich/:entityId/gleif-relationships')
   enrichGleifRelationships(@Param('entityId') entityId: string) {
