@@ -35,7 +35,8 @@
     "class-transformer": "^0.5.1",
     "helmet": "^7.1.0",
     "compression": "^1.7.4",
-    "fast-xml-parser": "^4.5.0"
+    "fast-xml-parser": "^4.5.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.2",

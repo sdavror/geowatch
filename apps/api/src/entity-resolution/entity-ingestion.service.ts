@@ -8,6 +8,8 @@ import { OfsiAdapter } from './ofsi.adapter';
 import { SecEdgarAdapter } from './sec-edgar.adapter';
 import { CompaniesHouseAdapter } from './companies-house.adapter';
 import { FranceRegistryAdapter, type FranceRegistryResult } from './france-registry.adapter';
+import { CanadaSemaAdapter } from './canada-sema.adapter';
+import { AustraliaDfatAdapter } from './australia-dfat.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -62,6 +64,8 @@ export class EntityIngestionService {
     private readonly secEdgar: SecEdgarAdapter,
     private readonly companiesHouse: CompaniesHouseAdapter,
     private readonly franceRegistry: FranceRegistryAdapter,
+    private readonly canadaSema: CanadaSemaAdapter,
+    private readonly australiaDfat: AustraliaDfatAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -98,6 +102,24 @@ export class EntityIngestionService {
       await this.ingestSecEdgar();
     } catch (err) {
       this.logger.error(`Scheduled SEC EDGAR entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 0 6 * * 1') // Mondays 06:00 UTC — staggered after SEC EDGAR
+  async scheduledCanadaSemaRefresh() {
+    try {
+      await this.ingestCanadaSema();
+    } catch (err) {
+      this.logger.error(`Scheduled Canada SEMA entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 30 6 * * 1') // Mondays 06:30 UTC — staggered after Canada
+  async scheduledAustraliaDfatRefresh() {
+    try {
+      await this.ingestAustraliaDfat();
+    } catch (err) {
+      this.logger.error(`Scheduled Australia DFAT entity ingestion failed: ${(err as Error).message}`);
     }
   }
 
@@ -239,6 +261,91 @@ export class EntityIngestionService {
   }
 
   /**
+   * Canada's Consolidated Autonomous Sanctions List. Unlike OFAC/EU/OFSI,
+   * carries no structured identifiers at all — every record here relies
+   * entirely on Phase 2 fuzzy matching / Phase 3 LLM to link against
+   * entities the other sources already resolved (this is exactly the "zero
+   * identifiers of its own" case those phases exist for). primaryCountryId
+   * is left null — Canada's "Country" field is the sanctions regime name,
+   * not a registration country, so guessing one here would be worse than
+   * leaving it for another source to backfill.
+   */
+  async ingestCanadaSema(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'Canada Consolidated Autonomous Sanctions List',
+      'https://www.international.gc.ca/world-monde/international_relations-relations_internationales/sanctions/consolidated-consolide.aspx',
+      'company',
+    );
+    const entities = await this.canadaSema.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers: [],
+        sanctions: [{ regime: 'Canada', program: e.program }],
+        primaryCountryId: null,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `Canada SEMA entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * Australia's DFAT Consolidated List. Same "no structured identifiers,
+   * relies on fuzzy/LLM linking" shape as Canada — DFAT's own free-text
+   * fields (Address, Citizenship) aren't structured registration numbers
+   * the way OFAC/EU/GLEIF's are, so extracting a reg_number here would be
+   * guessing rather than reading real data.
+   */
+  async ingestAustraliaDfat(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'Australia DFAT Consolidated List',
+      'https://www.dfat.gov.au/international-relations/security/sanctions/consolidated-list',
+      'company',
+    );
+    const entities = await this.australiaDfat.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers: [],
+        sanctions: [{ regime: 'Australia DFAT', program: e.program }],
+        primaryCountryId: null,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `Australia DFAT entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
    * US public company registry — not scoped by country/regime like the
    * sanctions sources (it's a general identity source, ~10,400 companies),
    * no sanctions payload. CIK is globally unique so no country mapping is
@@ -326,6 +433,68 @@ export class EntityIngestionService {
     }
 
     return { lei: leiRow.value, parentLinked, childrenLinked };
+  }
+
+  /**
+   * Fetches Companies House's real beneficial-ownership data (Persons with
+   * Significant Control) for an entity's known GB company number, and links
+   * each active corporate-entity PSC as a parent via EntityRelationship —
+   * same shape as enrichRelationshipsWithGleif. Individual-person PSCs (real
+   * people) are deliberately NOT linked: Entity.entityType only supports
+   * 'company', and modelling a Person is a schema decision, not something
+   * to bolt on silently while adding a source. Requires the entity to
+   * already carry a reg_number@GB identifier (run enrich/:id/companies-house
+   * first if it doesn't have one yet).
+   */
+  async enrichPscWithCompaniesHouse(
+    entityId: string,
+  ): Promise<{ companyNumber: string | null; parentsLinked: number; individualPscsSkipped: number }> {
+    if (!this.companiesHouse.configured) {
+      throw new Error('COMPANIES_HOUSE_API_KEY is not configured');
+    }
+    const regRow = await this.prisma.entityIdentifier.findFirst({
+      where: { entityId, type: 'reg_number', countryId: 'GB' },
+      select: { value: true },
+    });
+    if (!regRow) return { companyNumber: null, parentsLinked: 0, individualPscsSkipped: 0 };
+
+    const source = await this.getOrCreateSource(
+      'UK Companies House',
+      'https://api.company-information.service.gov.uk',
+      'company',
+    );
+    const pscs = await this.companiesHouse.fetchPsc(regRow.value);
+
+    let parentsLinked = 0;
+    let individualPscsSkipped = 0;
+    for (const psc of pscs) {
+      if (psc.ceased) continue;
+      if (psc.kind !== 'corporate-entity-person-with-significant-control') {
+        individualPscsSkipped++;
+        continue;
+      }
+      const identifiers: NormalizedEntityRecord['identifiers'] = psc.registrationNumber
+        ? [{ type: 'reg_number', value: psc.registrationNumber, countryId: psc.countryIso2 ?? '' }]
+        : [];
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: `psc:${regRow.value}:${psc.name}`,
+        name: psc.name,
+        aliases: [],
+        identifiers,
+        primaryCountryId: psc.countryIso2,
+        raw: psc.raw,
+      };
+      const { entityId: parentEntityId } = await this.resolution.resolve(record, source.id);
+      if (parentEntityId === entityId) continue;
+      await this.prisma.entityRelationship.upsert({
+        where: { parentId_childId: { parentId: parentEntityId, childId: entityId } },
+        create: { parentId: parentEntityId, childId: entityId, sourceId: source.id },
+        update: {},
+      });
+      parentsLinked++;
+    }
+
+    return { companyNumber: regRow.value, parentsLinked, individualPscsSkipped };
   }
 
   private gleifRecordToNormalized(g: {
