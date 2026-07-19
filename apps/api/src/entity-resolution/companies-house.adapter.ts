@@ -22,15 +22,40 @@ export interface CompaniesHouseProfile {
   countryIso2: string | null; // best-effort from registered_office_address.country
 }
 
-// Companies House's own address.country is a free-text name ("United
-// Kingdom", "Scotland", "Wales"...), not an ISO code — small local map
-// rather than pulling in the full Country table for a handful of values.
+// A "Person with Significant Control" — real beneficial-ownership data, not
+// a guess. Only the corporate-entity kind maps onto this project's Entity
+// graph (as an EntityRelationship, same shape as GLEIF's parent/child);
+// individual-person PSCs (real people, with date of birth/nationality) are
+// intentionally NOT modelled here — Entity.entityType only supports
+// 'company' today, and inventing a Person concept is a schema decision
+// bigger than "add a source", so those are surfaced in the raw payload for
+// a future round rather than silently dropped or half-modelled.
+export interface CompaniesHousePsc {
+  kind: string; // 'corporate-entity-person-with-significant-control' | 'individual-person-with-significant-control' | others
+  name: string;
+  ceased: boolean;
+  registrationNumber: string | null;
+  countryIso2: string | null; // best-effort from identification.country_registered
+  raw: unknown;
+}
+
+// Companies House's own address.country / identification.country_registered
+// is a free-text name ("United Kingdom", "Scotland", "Uk", "France"...), not
+// an ISO code — small local map rather than pulling in the full Country
+// table for a handful of values.
 const CH_COUNTRY_TO_ISO2: Record<string, string> = {
   'united kingdom': 'GB',
+  uk: 'GB',
   england: 'GB',
   scotland: 'GB',
   wales: 'GB',
   'northern ireland': 'GB',
+  france: 'FR',
+  germany: 'DE',
+  luxembourg: 'LU',
+  cyprus: 'CY',
+  netherlands: 'NL',
+  switzerland: 'CH',
 };
 
 @Injectable()
@@ -92,5 +117,37 @@ export class CompaniesHouseAdapter {
       previousNames: (d.previous_company_names ?? []).map((n) => n.name),
       countryIso2: countryName ? (CH_COUNTRY_TO_ISO2[countryName] ?? null) : null,
     };
+  }
+
+  async fetchPsc(companyNumber: string): Promise<CompaniesHousePsc[]> {
+    const res = await fetch(`${BASE_URL}/company/${companyNumber}/persons-with-significant-control`, {
+      headers: { Authorization: this.authHeader() },
+    });
+    if (res.status === 404) return [];
+    if (!res.ok) {
+      this.logger.warn(`Companies House PSC lookup for ${companyNumber} responded ${res.status}`);
+      return [];
+    }
+    const body = (await res.json()) as {
+      items?: Array<{
+        kind: string;
+        name?: string;
+        ceased?: boolean;
+        identification?: { registration_number?: string; country_registered?: string };
+      }>;
+    };
+    return (body.items ?? [])
+      .filter((i) => i.name)
+      .map((i) => {
+        const countryName = i.identification?.country_registered?.trim().toLowerCase();
+        return {
+          kind: i.kind,
+          name: i.name!,
+          ceased: !!i.ceased,
+          registrationNumber: i.identification?.registration_number ?? null,
+          countryIso2: countryName ? (CH_COUNTRY_TO_ISO2[countryName] ?? null) : null,
+          raw: i,
+        };
+      });
   }
 }

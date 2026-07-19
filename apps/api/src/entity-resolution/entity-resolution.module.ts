@@ -12,6 +12,8 @@ import { OfsiAdapter } from './ofsi.adapter';
 import { SecEdgarAdapter } from './sec-edgar.adapter';
 import { CompaniesHouseAdapter } from './companies-house.adapter';
 import { FranceRegistryAdapter } from './france-registry.adapter';
+import { CanadaSemaAdapter } from './canada-sema.adapter';
+import { AustraliaDfatAdapter } from './australia-dfat.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -29,6 +31,8 @@ import { OllamaClient } from '../analysis/ollama.client';
     SecEdgarAdapter,
     CompaniesHouseAdapter,
     FranceRegistryAdapter,
+    CanadaSemaAdapter,
+    AustraliaDfatAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })

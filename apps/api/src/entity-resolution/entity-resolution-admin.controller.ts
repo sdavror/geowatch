@@ -48,6 +48,16 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestSecEdgar();
   }
 
+  @Post('ingest/canada-sema')
+  ingestCanadaSema() {
+    return this.ingestion.ingestCanadaSema();
+  }
+
+  @Post('ingest/australia-dfat')
+  ingestAustraliaDfat() {
+    return this.ingestion.ingestAustraliaDfat();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);
@@ -67,6 +77,12 @@ export class EntityResolutionAdminController {
   @Post('enrich/:entityId/gleif-relationships')
   enrichGleifRelationships(@Param('entityId') entityId: string) {
     return this.ingestion.enrichRelationshipsWithGleif(entityId);
+  }
+
+  /** Requires a reg_number@GB identifier (run enrich/:id/companies-house first if needed). */
+  @Post('enrich/:entityId/companies-house-psc')
+  enrichCompaniesHousePsc(@Param('entityId') entityId: string) {
+    return this.ingestion.enrichPscWithCompaniesHouse(entityId);
   }
 
   /** Resolves a bare name (no identifiers) — verification tool now, seed for article-mention linking later. */
