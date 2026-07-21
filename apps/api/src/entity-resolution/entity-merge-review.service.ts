@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmEntityMatchService } from './llm-entity-match.service';
 
 /**
  * Executes (or dismisses) a Phase 2 fuzzy-match suggestion. Nothing here
@@ -10,7 +11,12 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class EntityMergeReviewService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(EntityMergeReviewService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmEntityMatchService,
+  ) {}
 
   async listPending() {
     return this.prisma.entityMergeReview.findMany({
@@ -190,6 +196,117 @@ export class EntityMergeReviewService {
     return { scanned: eligible.length, approved, failed };
   }
 
+  /**
+   * Extends Phase 3 to a part of the queue it never actually reached: every
+   * `method: 'fuzzy'` review has confidence >= 0.7 by construction
+   * (EntityResolutionService.findFuzzyCandidate returns immediately once a
+   * fuzzy match clears REVIEW_QUEUE_THRESHOLD, without ever calling the
+   * LLM — that only happens in the 0.35-0.7 gray zone). So hundreds of
+   * "pretty similar, same country" pairs have never gotten a semantic
+   * second opinion at all. This runs one now: an LLM agreement queues it
+   * for auto-approval at a stricter bar than ingestion-time (90 vs 70,
+   * since this is now itself the approval signal, not just "worth a
+   * human's time"); a confident LLM disagreement is real negative evidence
+   * (auto-reject); anything else is left pending with a marker so repeat
+   * runs don't re-judge it. Bounded by `limit` since local 14B inference
+   * takes real seconds per call — call again to keep working through the
+   * remainder.
+   */
+  async llmJudgeUnreviewedFuzzy(
+    reviewerId: string,
+    limit = 150,
+  ): Promise<{ scanned: number; approved: number; rejected: number; inconclusive: number; llmUnavailable: number }> {
+    const candidates = await this.prisma.entityMergeReview.findMany({
+      where: {
+        status: 'pending',
+        // Real bug found live: ordering by confidence desc without this
+        // filter pulled in only the ~100 leftover method='llm' reviews
+        // (all higher-confidence than any remaining fuzzy one after the
+        // conf>=95 auto-approve pass already ran) — eligible came back
+        // empty every time despite hundreds of real fuzzy candidates
+        // existing. Filter server-side on the JSON method field instead of
+        // hoping ordering/take happens to surface fuzzy rows.
+        matchedOn: { path: ['method'], equals: 'fuzzy' },
+      },
+      take: limit * 2, // over-fetch since the already-checked filter below still runs in JS
+      orderBy: { confidence: 'desc' },
+      include: {
+        entityA: { select: { canonicalName: true, primaryCountryId: true } },
+        entityB: { select: { canonicalName: true, primaryCountryId: true } },
+      },
+    });
+
+    const eligible = candidates
+      .filter((c) => {
+        const m = c.matchedOn as { llmSecondPassChecked?: boolean };
+        return !m.llmSecondPassChecked && c.entityA && c.entityB;
+      })
+      .slice(0, limit);
+
+    let approved = 0;
+    let rejected = 0;
+    let inconclusive = 0;
+    let llmUnavailable = 0;
+
+    for (const c of eligible) {
+      // Cascade side effects (see approve()) can resolve a later item in
+      // this batch before we reach it.
+      const stillPending = await this.prisma.entityMergeReview.findUnique({
+        where: { id: c.id },
+        select: { status: true },
+      });
+      if (stillPending?.status !== 'pending') continue;
+
+      const judgment = await this.llm.judge(
+        c.entityA!.canonicalName,
+        c.entityA!.primaryCountryId,
+        c.entityB!.canonicalName,
+        c.entityB!.primaryCountryId,
+      );
+
+      if (!judgment) {
+        llmUnavailable++;
+        continue; // don't mark checked — Ollama being down shouldn't permanently skip this item
+      }
+
+      const matchedOn = c.matchedOn as Record<string, unknown>;
+      if (judgment.isMatch && judgment.confidence >= 90) {
+        try {
+          await this.approve(c.id, reviewerId);
+          approved++;
+        } catch (err) {
+          this.logger.warn(`LLM second-pass approve failed for review ${c.id}: ${(err as Error).message}`);
+        }
+      } else if (!judgment.isMatch && judgment.confidence >= 70) {
+        await this.prisma.entityMergeReview.update({
+          where: { id: c.id },
+          data: {
+            status: 'rejected',
+            reviewerId,
+            reviewedAt: new Date(),
+            matchedOn: { ...matchedOn, llmSecondPassChecked: true, llmSecondPassReasoning: judgment.reasoning },
+          },
+        });
+        rejected++;
+      } else {
+        await this.prisma.entityMergeReview.update({
+          where: { id: c.id },
+          data: {
+            matchedOn: {
+              ...matchedOn,
+              llmSecondPassChecked: true,
+              llmSecondPassConfidence: judgment.confidence,
+              llmSecondPassReasoning: judgment.reasoning,
+            },
+          },
+        });
+        inconclusive++;
+      }
+    }
+
+    return { scanned: eligible.length, approved, rejected, inconclusive, llmUnavailable };
+  }
+
   async reject(reviewId: string, reviewerId: string) {
     await this.getPendingOrThrow(reviewId);
     await this.prisma.entityMergeReview.update({
@@ -199,10 +316,17 @@ export class EntityMergeReviewService {
     return { merged: false };
   }
 
-  private async getPendingOrThrow(reviewId: string) {
+  // Returns entityAId/entityBId narrowed to non-null: a pending review was
+  // always created with both set, and they only ever go null once the
+  // review itself has moved off 'pending' (SET NULL fires on the entity
+  // deletion that happens as PART of resolving a review, never before).
+  private async getPendingOrThrow(reviewId: string): Promise<{ id: string; entityAId: string; entityBId: string }> {
     const review = await this.prisma.entityMergeReview.findUnique({ where: { id: reviewId } });
     if (!review) throw new NotFoundException(`Merge review "${reviewId}" not found`);
     if (review.status !== 'pending') throw new BadRequestException('This review was already resolved');
-    return review;
+    if (!review.entityAId || !review.entityBId) {
+      throw new BadRequestException(`Merge review "${reviewId}" is pending but missing an entity reference`);
+    }
+    return { id: review.id, entityAId: review.entityAId, entityBId: review.entityBId };
   }
 }

@@ -442,10 +442,22 @@ enum MergeReviewStatus {
 // a review is what folds entityB's data into entityA and removes entityB).
 model EntityMergeReview {
   id         String            @id @default(uuid()) @db.Uuid
-  entityAId  String            @map("entity_a_id") @db.Uuid
-  entityA    Entity            @relation("MergeReviewA", fields: [entityAId], references: [id], onDelete: Cascade)
-  entityBId  String            @map("entity_b_id") @db.Uuid
-  entityB    Entity            @relation("MergeReviewB", fields: [entityBId], references: [id], onDelete: Cascade)
+  // Nullable + SET NULL (not the original CASCADE): a merge decision is an
+  // audit record. With CASCADE, approving a review deletes entityB in the
+  // same transaction, which immediately cascade-deletes the very row that
+  // just recorded the decision — every "approved" row vanished the instant
+  // it was created. Worse, entityA carrying CASCADE meant a later merge
+  // that folds A into some other entity erases A's own merge history too.
+  // The canonical-name snapshots below keep the record human-readable even
+  // after the entities themselves are gone.
+  entityAId  String?           @map("entity_a_id") @db.Uuid
+  entityA    Entity?           @relation("MergeReviewA", fields: [entityAId], references: [id], onDelete: SetNull)
+  entityBId  String?           @map("entity_b_id") @db.Uuid
+  entityB    Entity?           @relation("MergeReviewB", fields: [entityBId], references: [id], onDelete: SetNull)
+  // Snapshot at review-creation time — survives entity deletion, unlike the
+  // live relations above.
+  entityACanonicalName String? @map("entity_a_canonical_name")
+  entityBCanonicalName String? @map("entity_b_canonical_name")
   confidence Float
   // Which signals contributed and their individual scores — e.g.
   // {"nameSimilarity": 0.94, "countryMatch": true}. Kept as a transparent

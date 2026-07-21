@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -156,5 +156,17 @@ export class EntityResolutionAdminController {
   @Post('reviews/auto-approve')
   autoApproveReviews(@CurrentUser() user: TokenPayload) {
     return this.reviews.autoApproveHighConfidence(user.sub);
+  }
+
+  /**
+   * Extends Phase 3 to the `fuzzy`-method reviews that never got an LLM
+   * opinion in the first place (see EntityMergeReviewService.
+   * llmJudgeUnreviewedFuzzy). Call repeatedly (default batch 150) to work
+   * through the remainder — local inference is slow enough that one huge
+   * batch isn't practical.
+   */
+  @Post('reviews/llm-second-pass')
+  llmSecondPassReviews(@CurrentUser() user: TokenPayload, @Query('limit') limit?: string) {
+    return this.reviews.llmJudgeUnreviewedFuzzy(user.sub, limit ? parseInt(limit, 10) : undefined);
   }
 }
