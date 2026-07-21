@@ -19,6 +19,7 @@ import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import { SlovakiaOrsfAdapter } from './slovakia-orsf.adapter';
 import { JapanMofAdapter } from './japan-mof.adapter';
 import { SwitzerlandSecoAdapter } from './switzerland-seco.adapter';
+import { IrelandCroAdapter, type IrelandCroResult } from './ireland-cro.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -84,6 +85,7 @@ export class EntityIngestionService {
     private readonly slovakiaOrsf: SlovakiaOrsfAdapter,
     private readonly japanMof: JapanMofAdapter,
     private readonly switzerlandSeco: SwitzerlandSecoAdapter,
+    private readonly irelandCro: IrelandCroAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -1180,6 +1182,51 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, ico: profile.ico, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Ireland's CRO open-data bulk register.
+   * Unlike Companies House/France/Norway/Finland/Switzerland/Slovakia,
+   * there is no live search-by-name API for this source at all — the
+   * adapter's `searchByName` downloads the full daily CSV snapshot and
+   * filters client-side, and each matched row already carries full profile
+   * data (no separate profile-fetch round-trip needed).
+   */
+  async enrichWithIrelandCro(
+    entityId: string,
+  ): Promise<{ found: boolean; companyNumber?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Ireland CRO Open Data', 'https://opendata.cro.ie', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: IrelandCroResult; score: number } | null = null;
+    const results = await this.irelandCro.searchByCandidates(candidateNames);
+    for (const r of results) {
+      const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+      if (!best || score > best.score) best = { r, score };
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: best.r.companyNumber,
+      name: best.r.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: best.r.companyNumber, countryId: 'IE' }],
+      primaryCountryId: 'IE',
+      profile: {
+        status: best.r.status,
+        industryCode: best.r.industryCode,
+        addressLine: best.r.addressLine,
+        addressPostalCode: best.r.addressPostalCode,
+      },
+      raw: best.r.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, companyNumber: best.r.companyNumber, matchedExisting: result.entityId === entityId };
   }
 
   /**
