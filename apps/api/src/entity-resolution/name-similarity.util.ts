@@ -7,6 +7,17 @@ const LEGAL_SUFFIXES = [
   'open joint stock company',
   'limited liability company',
   'joint stock company',
+  // Real bug found live (Ireland CRO): "designated activity company"
+  // wasn't stripped, so its own standard abbreviation "DAC" scored WORSE
+  // against the expanded form than an entirely different, shorter,
+  // unrelated company ("Ryanair.com Limited" vs "Ryanair Designated
+  // Activity Company") — bigramSimilarity's Dice coefficient penalizes
+  // length mismatch, and nothing here normalized the two to the same
+  // stripped base ("ryanair"). Must list the multi-word phrase before
+  // any of its substrings would otherwise be touched.
+  'designated activity company',
+  'dac',
+  'clg', // Company Limited by Guarantee (Ireland/UK)
   'pjsc',
   'jsc',
   'plc',

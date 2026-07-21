@@ -23,6 +23,7 @@ import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import { SlovakiaOrsfAdapter } from './slovakia-orsf.adapter';
 import { JapanMofAdapter } from './japan-mof.adapter';
 import { SwitzerlandSecoAdapter } from './switzerland-seco.adapter';
+import { IrelandCroAdapter } from './ireland-cro.adapter';
 import { OllamaClient } from '../analysis/ollama.client';
 
 @Module({
@@ -51,6 +52,7 @@ import { OllamaClient } from '../analysis/ollama.client';
     SlovakiaOrsfAdapter,
     JapanMofAdapter,
     SwitzerlandSecoAdapter,
+    IrelandCroAdapter,
   ],
   exports: [EntityResolutionService, EntityIngestionService],
 })
