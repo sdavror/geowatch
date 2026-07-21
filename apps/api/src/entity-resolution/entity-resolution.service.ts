@@ -71,6 +71,7 @@ export interface LlmBudget {
 
 interface CandidateMatch {
   entityId: string;
+  canonicalName: string;
   confidence: number; // 0-1
   nameSimilarity: number;
   countryMatch: boolean;
@@ -269,6 +270,8 @@ export class EntityResolutionService {
         create: {
           entityAId: fuzzyCandidate.entityId,
           entityBId: entityId,
+          entityACanonicalName: fuzzyCandidate.canonicalName,
+          entityBCanonicalName: record.name,
           confidence: Math.round(fuzzyCandidate.confidence * 100),
           matchedOn: {
             method: fuzzyCandidate.method,
@@ -382,7 +385,7 @@ export class EntityResolutionService {
       take: CANDIDATE_POOL_LIMIT,
     });
 
-    let best: (CandidateMatch & { canonicalName: string }) | null = null;
+    let best: CandidateMatch | null = null;
 
     for (const c of candidates) {
       const nameSimilarity = bigramSimilarity(targetName, normalizeCompanyName(c.canonicalName));
@@ -410,6 +413,7 @@ export class EntityResolutionService {
       if (judgment?.isMatch && judgment.confidence >= LLM_QUEUE_THRESHOLD) {
         return {
           entityId: best.entityId,
+          canonicalName: best.canonicalName,
           confidence: judgment.confidence / 100,
           nameSimilarity: best.nameSimilarity,
           countryMatch: best.countryMatch,

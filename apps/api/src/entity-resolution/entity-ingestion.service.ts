@@ -16,6 +16,7 @@ import { LatviaRegistryAdapter } from './latvia-registry.adapter';
 import { NorwayBrregAdapter } from './norway-brreg.adapter';
 import { FinlandYtjAdapter } from './finland-ytj.adapter';
 import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
+import { SlovakiaOrsfAdapter } from './slovakia-orsf.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -78,6 +79,7 @@ export class EntityIngestionService {
     private readonly norwayBrreg: NorwayBrregAdapter,
     private readonly finlandYtj: FinlandYtjAdapter,
     private readonly switzerlandZefix: SwitzerlandZefixAdapter,
+    private readonly slovakiaOrsf: SlovakiaOrsfAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -1027,6 +1029,68 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, uid: profile.uid, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Slovakia's ORSF register aggregator (free,
+   * keyless, aggregates the official RPO/ORSR/RUZ sources) — same shape as
+   * enrichWithSwitzerlandRegistry. Confirmed live 2026-07-20 with real
+   * address/NACE-code/status data. Director data exists in the provider's
+   * own schema but is documented as requiring authentication — left out
+   * rather than reported as empty.
+   */
+  async enrichWithSlovakiaRegistry(
+    entityId: string,
+  ): Promise<{ found: boolean; ico?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Slovakia ORSF Register', 'https://orsf.sk', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { ico: string; name: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      if (!candidateName.trim()) continue;
+      // Real bug found live: unlike other countries' legal-form suffixes
+      // (all covered by LEGAL_SUFFIXES), Slovak "a.s."/"s.r.o." aren't in
+      // that list, so normalizeCompanyName leaves stray single-letter
+      // tokens ("slovnaft a s") — ORSF's meili full-text search then
+      // dilutes ranking toward OTHER companies matching "a"/"s" as their
+      // own legal-form tokens, and the real match drops out of the top
+      // results entirely. Query with the raw candidate name instead
+      // (ORSF's own search already handles ordinary company names well);
+      // normalizeCompanyName is still used for scoring the results.
+      const results = await this.slovakiaOrsf.searchByName(candidateName);
+      for (const r of results) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.slovakiaOrsf.fetchProfile(best.r.ico);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.ico,
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.ico, countryId: 'SK' }],
+      primaryCountryId: 'SK',
+      profile: {
+        status: profile.status,
+        industryCode: profile.industryCode,
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+      },
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, ico: profile.ico, matchedExisting: result.entityId === entityId };
   }
 
   /**
