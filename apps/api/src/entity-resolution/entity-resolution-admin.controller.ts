@@ -73,6 +73,11 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestLatviaRegistry();
   }
 
+  @Post('ingest/japan-mof')
+  ingestJapanMof() {
+    return this.ingestion.ingestJapanMof();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);

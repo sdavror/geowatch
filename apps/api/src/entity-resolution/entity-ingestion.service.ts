@@ -17,6 +17,7 @@ import { NorwayBrregAdapter } from './norway-brreg.adapter';
 import { FinlandYtjAdapter } from './finland-ytj.adapter';
 import { SwitzerlandZefixAdapter } from './switzerland-zefix.adapter';
 import { SlovakiaOrsfAdapter } from './slovakia-orsf.adapter';
+import { JapanMofAdapter } from './japan-mof.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -80,6 +81,7 @@ export class EntityIngestionService {
     private readonly finlandYtj: FinlandYtjAdapter,
     private readonly switzerlandZefix: SwitzerlandZefixAdapter,
     private readonly slovakiaOrsf: SlovakiaOrsfAdapter,
+    private readonly japanMof: JapanMofAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -383,6 +385,50 @@ export class EntityIngestionService {
     const summary = { processed: entities.length, created, merged };
     this.logger.log(
       `Australia DFAT entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * Japan's own sanctions program (Ministry of Finance asset-freeze list) —
+   * the first sanctions source in this project from a top-economy country
+   * whose OWN designations we track, rather than a copy of/overlap with US/
+   * EU/UK lists. Same "no structured identifiers, relies on fuzzy/LLM
+   * linking" shape as Canada/Australia — Japan's free-text address field
+   * gives a real country name though, unlike those two, so primaryCountryId
+   * is populated where resolvable.
+   */
+  async ingestJapanMof(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'Japan MOF Sanctions List',
+      'https://www.mof.go.jp/international_policy/gaitame_kawase/gaitame/economic_sanctions/list.html',
+      'company',
+    );
+    const countryMap = await this.buildCountryNameMap();
+    const entities = await this.japanMof.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers: [],
+        sanctions: [{ regime: 'Japan MOF', program: 'asset-freeze' }],
+        primaryCountryId: countryMap.get(this.normalizeCountryName(e.addressCountryName)) || null,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `Japan MOF entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
     );
     return summary;
   }
