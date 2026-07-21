@@ -146,4 +146,15 @@ export class EntityResolutionAdminController {
   rejectReview(@Param('id') id: string, @CurrentUser() user: TokenPayload) {
     return this.reviews.reject(id, user.sub);
   }
+
+  /**
+   * Bulk-approves only the safest tier of the pending queue (near-exact
+   * name match, same country, string-similarity method — see
+   * EntityMergeReviewService.autoApproveHighConfidence). Everything else
+   * stays queued for a human.
+   */
+  @Post('reviews/auto-approve')
+  autoApproveReviews(@CurrentUser() user: TokenPayload) {
+    return this.reviews.autoApproveHighConfidence(user.sub);
+  }
 }

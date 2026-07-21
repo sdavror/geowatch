@@ -30,12 +30,17 @@ export class EntityMergeReviewService {
   async approve(reviewId: string, reviewerId: string) {
     const review = await this.getPendingOrThrow(reviewId);
 
-    const [aliases, identifiers, sanctions, sourceLinks] = await Promise.all([
-      this.prisma.entityAlias.findMany({ where: { entityId: review.entityBId } }),
-      this.prisma.entityIdentifier.findMany({ where: { entityId: review.entityBId } }),
-      this.prisma.entitySanction.findMany({ where: { entityId: review.entityBId } }),
-      this.prisma.entitySourceLink.findMany({ where: { entityId: review.entityBId } }),
-    ]);
+    const [entityB, aliases, identifiers, sanctions, sourceLinks, officers, relsAsParent, relsAsChild] =
+      await Promise.all([
+        this.prisma.entity.findUniqueOrThrow({ where: { id: review.entityBId } }),
+        this.prisma.entityAlias.findMany({ where: { entityId: review.entityBId } }),
+        this.prisma.entityIdentifier.findMany({ where: { entityId: review.entityBId } }),
+        this.prisma.entitySanction.findMany({ where: { entityId: review.entityBId } }),
+        this.prisma.entitySourceLink.findMany({ where: { entityId: review.entityBId } }),
+        this.prisma.entityOfficer.findMany({ where: { entityId: review.entityBId } }),
+        this.prisma.entityRelationship.findMany({ where: { parentId: review.entityBId } }),
+        this.prisma.entityRelationship.findMany({ where: { childId: review.entityBId } }),
+      ]);
 
     await this.prisma.$transaction(async (tx) => {
       for (const a of aliases) {
@@ -71,6 +76,57 @@ export class EntityMergeReviewService {
       for (const link of sourceLinks) {
         await tx.entitySourceLink.update({ where: { id: link.id }, data: { entityId: review.entityAId } });
       }
+      // Real gap found live: EntityOfficer and EntityRelationship were both
+      // added to the schema after this method was written — without this,
+      // every approved merge silently discarded entityB's officers (its
+      // rows cascade-delete with the entity) and orphaned/dropped its
+      // ownership edges. Same upsert-onto-A pattern as aliases/identifiers.
+      for (const o of officers) {
+        await tx.entityOfficer.upsert({
+          where: {
+            entityId_name_role_sourceId: { entityId: review.entityAId, name: o.name, role: o.role, sourceId: o.sourceId },
+          },
+          create: { entityId: review.entityAId, name: o.name, role: o.role, countryId: o.countryId, sourceId: o.sourceId },
+          update: {},
+        });
+      }
+      for (const rel of relsAsParent) {
+        if (rel.childId === review.entityAId) continue; // would become a self-relationship
+        await tx.entityRelationship.upsert({
+          where: { parentId_childId: { parentId: review.entityAId, childId: rel.childId } },
+          create: { parentId: review.entityAId, childId: rel.childId, sourceId: rel.sourceId },
+          update: {},
+        });
+      }
+      for (const rel of relsAsChild) {
+        if (rel.parentId === review.entityAId) continue;
+        await tx.entityRelationship.upsert({
+          where: { parentId_childId: { parentId: rel.parentId, childId: review.entityAId } },
+          create: { parentId: rel.parentId, childId: review.entityAId, sourceId: rel.sourceId },
+          update: {},
+        });
+      }
+      // Profile fields (Track A): same self-healing "fill only if null"
+      // rule as EntityResolutionService.fillProfileFields — entityA's own
+      // value (if any) always wins, entityB's fills the gaps.
+      const profileFields: Array<keyof typeof entityB> = [
+        'website',
+        'status',
+        'industryCode',
+        'industryLabel',
+        'addressLine',
+        'addressCity',
+        'addressPostalCode',
+      ];
+      for (const field of profileFields) {
+        const value = entityB[field];
+        if (value) {
+          await tx.entity.updateMany({
+            where: { id: review.entityAId, [field]: null },
+            data: { [field]: value },
+          });
+        }
+      }
       // Mark this review approved BEFORE deleting entityB — the FK from
       // EntityMergeReview.entityB is ON DELETE CASCADE, so deleting the
       // entity first would cascade-delete this very review row and leave
@@ -87,6 +143,51 @@ export class EntityMergeReviewService {
     });
 
     return { merged: true, entityId: review.entityAId };
+  }
+
+  /**
+   * Bulk-approves only the safest tier of the pending queue: near-exact
+   * name matches (fuzzy, not LLM — LLM judgments only fire in the 0.35-0.7
+   * gray zone by construction, so they're never this confident on string
+   * similarity alone) within the same country. Deliberately conservative —
+   * this is "the same company under two spellings" territory (e.g. "LLC
+   * Synesis" vs "Synesis"), not a heuristic for genuinely ambiguous cases,
+   * which stay queued for a human. Everything below the threshold is left
+   * exactly where it is.
+   */
+  async autoApproveHighConfidence(
+    reviewerId: string,
+    minConfidence = 95,
+  ): Promise<{ scanned: number; approved: number; failed: number }> {
+    const candidates = await this.prisma.entityMergeReview.findMany({
+      where: { status: 'pending', confidence: { gte: minConfidence } },
+      select: { id: true, matchedOn: true },
+    });
+    const eligible = candidates.filter((c) => {
+      const m = c.matchedOn as { method?: string; countryMatch?: boolean };
+      return m.method === 'fuzzy' && m.countryMatch === true;
+    });
+
+    let approved = 0;
+    let failed = 0;
+    for (const c of eligible) {
+      try {
+        // Re-check pending status per-iteration: approving one review can
+        // cascade-resolve OTHERS naming the same now-deleted entity (see
+        // the comment in approve()), so an earlier item in this loop may
+        // have already resolved a later one.
+        const stillPending = await this.prisma.entityMergeReview.findUnique({
+          where: { id: c.id },
+          select: { status: true },
+        });
+        if (stillPending?.status !== 'pending') continue;
+        await this.approve(c.id, reviewerId);
+        approved++;
+      } catch (err) {
+        failed++;
+      }
+    }
+    return { scanned: eligible.length, approved, failed };
   }
 
   async reject(reviewId: string, reviewerId: string) {
