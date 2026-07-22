@@ -19,7 +19,7 @@ COPY apps/web/package.json ./apps/web/package.json
 # platform-specific @next/swc binary (musl instead of gnu) despite this
 # being a correctly-detected glibc/Debian environment — re-running the
 # install from scratch resolved it, with no other change needed.
-ARG CACHEBUST=2
+ARG CACHEBUST=3
 RUN echo "cachebust: ${CACHEBUST}"
 
 RUN npm config set fetch-retries 5 \
@@ -27,6 +27,21 @@ RUN npm config set fetch-retries 5 \
   && npm config set fetch-retry-maxtimeout 120000 \
   && npm config set maxsockets 3 \
   && npm install --include-workspace-root
+
+# npm treats a failed optional-dependency download (e.g. the native SWC
+# binary) as a warning, not an install failure — `npm install` above can
+# exit 0 while silently missing @next/swc-linux-x64-gnu on a flaky network,
+# which then surfaces later as `next build`'s own single-shot (no-retry)
+# runtime downloader failing instead. Explicitly re-run install with a real
+# retry loop until the binary is actually present, so the failure (and the
+# retry) happens here where it's visible and cheap, not inside `next build`.
+RUN for i in $(seq 1 15); do \
+      node -e "require.resolve('@next/swc-linux-x64-gnu')" 2>/dev/null && echo "swc binary present after $i attempt(s)" && exit 0; \
+      echo "swc binary missing (attempt $i/15) — re-running npm install"; \
+      npm install --include-workspace-root; \
+      sleep 3; \
+    done; \
+    node -e "require.resolve('@next/swc-linux-x64-gnu')" && echo "swc binary present" || (echo "swc binary still missing after 15 attempts" && exit 1)
 
 # ── Layer 2: source code (invalidated on any file change) ───────────────
 # Now copy the actual source — this layer rebuilds fast (no npm install).

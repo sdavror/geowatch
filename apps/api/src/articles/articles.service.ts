@@ -228,8 +228,18 @@ export class ArticlesService {
     const d30 = new Date(now - 30 * 86400_000);
     const d60 = new Date(now - 60 * 86400_000);
 
-    const [statusCounts, totalArticles, weeklyPublished, weeklyDrafts, views30d, viewsPrev30d, openTasks, comments7d, unreadMessages] =
-      await Promise.all([
+    const [
+      statusCounts,
+      totalArticles,
+      weeklyPublished,
+      weeklyDrafts,
+      views30d,
+      viewsPrev30d,
+      openTasks,
+      comments7d,
+      unreadMessages,
+      pendingEntityReviews,
+    ] = await Promise.all([
         this.statusCounts(),
         this.prisma.article.count(),
         this.prisma.article.count({ where: { published: true, publishedAt: { gte: d7 } } }),
@@ -243,6 +253,7 @@ export class ArticlesService {
         this.prisma.editorialTask.count({ where: { userId, done: false } }),
         this.prisma.comment.count({ where: { createdAt: { gte: d7 } } }),
         this.prisma.message.count({ where: { toId: userId, readAt: null } }),
+        this.prisma.entityMergeReview.count({ where: { status: 'pending' } }),
       ]);
 
     return {
@@ -255,6 +266,7 @@ export class ArticlesService {
       openTasks,
       comments7d,
       unreadMessages,
+      pendingEntityReviews,
     };
   }
 

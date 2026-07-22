@@ -312,6 +312,103 @@ export interface OllamaStatus {
   model: string;
 }
 
+// ─────────────────────────────────────────────
+// Entity Resolution (corporate/sanctions intelligence)
+// ─────────────────────────────────────────────
+
+// GET /entities?q=
+export interface EntitySearchResult {
+  id: string;
+  entityType: string;
+  canonicalName: string;
+  aliases: string[];
+  sanctionCount: number;
+}
+
+interface EntitySourceRef {
+  source: { name: string } | null;
+}
+
+export interface EntityAliasEntry extends EntitySourceRef {
+  id: string;
+  name: string;
+}
+
+export interface EntityIdentifierEntry extends EntitySourceRef {
+  id: string;
+  type: string;
+  value: string;
+  countryId: string;
+}
+
+export interface EntitySanctionEntry extends EntitySourceRef {
+  id: string;
+  regime: string;
+  program: string;
+}
+
+export interface EntityOfficerEntry extends EntitySourceRef {
+  id: string;
+  name: string;
+  role: string;
+  countryId: string | null;
+}
+
+export interface EntitySourceLinkEntry {
+  externalId: string;
+  fetchedAt: string;
+  source: { name: string } | null;
+}
+
+export interface EntityRelationshipEntry {
+  parent?: { id: string; canonicalName: string };
+  child?: { id: string; canonicalName: string };
+}
+
+// GET /entities/:id
+export interface EntityDetail {
+  id: string;
+  entityType: string;
+  canonicalName: string;
+  primaryCountryId: string | null;
+  website: string | null;
+  status: string | null;
+  industryCode: string | null;
+  industryLabel: string | null;
+  addressLine: string | null;
+  addressCity: string | null;
+  addressPostalCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+  aliases: EntityAliasEntry[];
+  identifiers: EntityIdentifierEntry[];
+  sanctions: EntitySanctionEntry[];
+  officers: EntityOfficerEntry[];
+  sourceLinks: EntitySourceLinkEntry[];
+  relationshipsAsChild: EntityRelationshipEntry[];
+  relationshipsAsParent: EntityRelationshipEntry[];
+}
+
+// GET /admin/entity-resolution/reviews
+export interface EntityMergeReviewEntry {
+  id: string;
+  confidence: number; // 0-100
+  matchedOn: {
+    method?: 'fuzzy' | 'llm';
+    nameSimilarity?: number;
+    countryMatch?: boolean;
+    llmSecondPassChecked?: boolean;
+    llmSecondPassReasoning?: string;
+    [key: string]: unknown;
+  };
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  entityACanonicalName: string | null;
+  entityBCanonicalName: string | null;
+  entityA: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
+  entityB: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
+}
+
 export interface Article {
   id: string;
   sourceId?: string | null;
@@ -366,6 +463,7 @@ export interface DashboardStats {
   openTasks: number;
   comments7d: number;
   unreadMessages: number;
+  pendingEntityReviews: number;
 }
 
 // ─────────────────────────────────────────────

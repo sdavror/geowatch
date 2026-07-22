@@ -1,13 +1,20 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmEntityMatchService } from './llm-entity-match.service';
 
 /**
- * Executes (or dismisses) a Phase 2 fuzzy-match suggestion. Nothing here
- * runs automatically — every merge is a human clicking "approve" on a
- * specific confidence-scored candidate. Approving moves entityB's data onto
- * entityA and removes entityB; rejecting just marks the review dismissed
- * and leaves both entities as they are.
+ * Executes (or dismisses) a Phase 2 fuzzy-match suggestion. A genuinely
+ * ambiguous merge is still always a human clicking "approve" on a specific
+ * confidence-scored candidate — but the safe-tier auto-approve and LLM
+ * second-pass ARE run automatically now (see scheduledQueueMaintenance
+ * below), because the queue kept growing unboundedly with every new bulk
+ * source (Canada/Australia/Japan/Switzerland SECO/UN SC all add hundreds of
+ * identifier-less records that lean on this exact path) while previously
+ * the only way to work through it was an admin manually clicking two
+ * buttons. Approving moves entityB's data onto entityA and removes entityB;
+ * rejecting just marks the review dismissed and leaves both entities as
+ * they are.
  */
 @Injectable()
 export class EntityMergeReviewService {
@@ -17,6 +24,30 @@ export class EntityMergeReviewService {
     private readonly prisma: PrismaService,
     private readonly llm: LlmEntityMatchService,
   ) {}
+
+  // Daily rather than weekly-after-ingest: reviews also accumulate from
+  // admin-triggered ingests and enrichments that don't run on the ingest
+  // cron at all, so tying this to a specific source's schedule would miss
+  // most of the queue's actual growth. `reviewerId: null` on both calls
+  // marks these as system decisions in the audit trail, distinguishable
+  // from a human's UUID. Local 14B inference is slow — 300/day is enough to
+  // work through new arrivals continuously without one run blocking for
+  // hours; the admin UI's "Run LLM second pass" button covers anyone who
+  // wants to push through the backlog faster.
+  @Cron('0 2 * * *') // Daily 02:00 UTC
+  async scheduledQueueMaintenance() {
+    try {
+      const autoApprove = await this.autoApproveHighConfidence(null);
+      const llmPass = await this.llmJudgeUnreviewedFuzzy(null, 300);
+      this.logger.log(
+        `Review queue maintenance: auto-approved ${autoApprove.approved}/${autoApprove.scanned}; ` +
+          `LLM pass ${llmPass.approved} approved, ${llmPass.rejected} rejected, ${llmPass.inconclusive} inconclusive ` +
+          `of ${llmPass.scanned} (${llmPass.llmUnavailable} unavailable)`,
+      );
+    } catch (err) {
+      this.logger.error(`Scheduled review-queue maintenance failed: ${(err as Error).message}`);
+    }
+  }
 
   async listPending() {
     return this.prisma.entityMergeReview.findMany({
@@ -33,7 +64,7 @@ export class EntityMergeReviewService {
     });
   }
 
-  async approve(reviewId: string, reviewerId: string) {
+  async approve(reviewId: string, reviewerId: string | null) {
     const review = await this.getPendingOrThrow(reviewId);
 
     const [entityB, aliases, identifiers, sanctions, sourceLinks, officers, relsAsParent, relsAsChild] =
@@ -162,7 +193,7 @@ export class EntityMergeReviewService {
    * exactly where it is.
    */
   async autoApproveHighConfidence(
-    reviewerId: string,
+    reviewerId: string | null,
     minConfidence = 95,
   ): Promise<{ scanned: number; approved: number; failed: number }> {
     const candidates = await this.prisma.entityMergeReview.findMany({
@@ -213,7 +244,7 @@ export class EntityMergeReviewService {
    * remainder.
    */
   async llmJudgeUnreviewedFuzzy(
-    reviewerId: string,
+    reviewerId: string | null,
     limit = 150,
   ): Promise<{ scanned: number; approved: number; rejected: number; inconclusive: number; llmUnavailable: number }> {
     const candidates = await this.prisma.entityMergeReview.findMany({
@@ -307,7 +338,7 @@ export class EntityMergeReviewService {
     return { scanned: eligible.length, approved, rejected, inconclusive, llmUnavailable };
   }
 
-  async reject(reviewId: string, reviewerId: string) {
+  async reject(reviewId: string, reviewerId: string | null) {
     await this.getPendingOrThrow(reviewId);
     await this.prisma.entityMergeReview.update({
       where: { id: reviewId },
