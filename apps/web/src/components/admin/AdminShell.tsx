@@ -36,6 +36,8 @@ export type AdminSection =
   | 'templates'
   // System (Apolitics-specific, preserved features)
   | 'sources'
+  | 'entities'
+  | 'entity-reviews'
   | 'users'
   // Bottom block
   | 'settings'
@@ -100,6 +102,8 @@ const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
     title: 'System',
     items: [
       { key: 'sources', label: 'Sources', icon: '📡' },
+      { key: 'entities', label: 'Entities', icon: '🏢' },
+      { key: 'entity-reviews', label: 'Entity reviews', icon: '🔗', badge: (s) => s.pendingEntityReviews },
       { key: 'users', label: 'Users', icon: '🧑‍💼', ownerOnly: true },
     ],
   },

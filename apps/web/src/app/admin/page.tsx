@@ -9,6 +9,8 @@ import { useAuth, authFetch } from '@/lib/auth';
 import { AdminShell, type AdminSection } from '@/components/admin/AdminShell';
 import { DashboardOverview } from '@/components/admin/DashboardOverview';
 import { SourcesManager } from '@/components/admin/SourcesManager';
+import { EntitiesManager } from '@/components/admin/EntitiesManager';
+import { EntityReviewsManager } from '@/components/admin/EntityReviewsManager';
 import { EditorWorkspace } from '@/components/admin/EditorWorkspace';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
@@ -471,6 +473,8 @@ export default function AdminPage() {
       {section === 'tags' && <TagsManager onBrowseTag={browseTag} />}
       {section === 'templates' && <TemplatesSection onUseTemplate={useTemplate} />}
       {section === 'sources' && <SourcesManager />}
+      {section === 'entities' && <EntitiesManager />}
+      {section === 'entity-reviews' && <EntityReviewsManager />}
       {section === 'users' && isOwner && <UserManager />}
       {section === 'settings' && (
         <div>
