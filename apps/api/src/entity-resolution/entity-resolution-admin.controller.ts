@@ -83,6 +83,11 @@ export class EntityResolutionAdminController {
     return this.ingestion.ingestSwitzerlandSeco();
   }
 
+  @Post('ingest/un-security-council')
+  ingestUnSecurityCouncil() {
+    return this.ingestion.ingestUnSecurityCouncil();
+  }
+
   @Post('enrich/:entityId/gleif')
   enrichGleif(@Param('entityId') entityId: string) {
     return this.ingestion.enrichWithGleif(entityId);

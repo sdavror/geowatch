@@ -21,6 +21,7 @@ import { JapanMofAdapter } from './japan-mof.adapter';
 import { SwitzerlandSecoAdapter } from './switzerland-seco.adapter';
 import { IrelandCroAdapter, type IrelandCroResult } from './ireland-cro.adapter';
 import { RomaniaAnafAdapter, normalizeRomaniaStatus } from './romania-anaf.adapter';
+import { UnSecurityCouncilAdapter } from './un-security-council.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -48,6 +49,15 @@ const OFAC_COUNTRY_NAME_ALIASES: Record<string, string> = {
   'korea, north': 'north korea',
   'region: crimea': 'ukraine',
   'region: russia': 'russia',
+  // UN Security Council consolidated list uses its own formal UN-style
+  // country names, distinct from OFAC's phrasing above.
+  'democratic republic of the congo': 'dr congo',
+  "democratic people's republic of korea": 'north korea',
+  'iran (islamic republic of)': 'iran',
+  'syrian arab republic': 'syria',
+  'united republic of tanzania': 'tanzania',
+  'united kingdom of great britain and northern ireland': 'united kingdom',
+  'united states of america': 'united states',
 };
 
 export interface IngestSummary {
@@ -88,6 +98,7 @@ export class EntityIngestionService {
     private readonly switzerlandSeco: SwitzerlandSecoAdapter,
     private readonly irelandCro: IrelandCroAdapter,
     private readonly romaniaAnaf: RomaniaAnafAdapter,
+    private readonly unSecurityCouncil: UnSecurityCouncilAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -476,6 +487,51 @@ export class EntityIngestionService {
     const summary = { processed: entities.length, created, merged };
     this.logger.log(
       `Switzerland SECO entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
+    );
+    return summary;
+  }
+
+  /**
+   * The UN Security Council's own consolidated sanctions list — genuinely
+   * multilateral (13 active regimes), not a copy of any single country's
+   * program. Same "no structured identifiers, relies on fuzzy/LLM linking"
+   * shape as Canada/Australia/Japan/Switzerland SECO. Unlike Canada/
+   * Australia/Switzerland SECO (whose "country" field is a regime name),
+   * UN SC entity records carry a real free-text registration/HQ country in
+   * ENTITY_ADDRESS, so primaryCountryId is populated where resolvable —
+   * same as Japan MOF.
+   */
+  async ingestUnSecurityCouncil(): Promise<IngestSummary> {
+    const source = await this.getOrCreateSource(
+      'UN Security Council Consolidated List',
+      'https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list',
+      'company',
+    );
+    const countryMap = await this.buildCountryNameMap();
+    const entities = await this.unSecurityCouncil.fetchEntities();
+    const llmBudget: LlmBudget = { remaining: OFAC_LLM_BUDGET };
+
+    let created = 0;
+    let merged = 0;
+    for (const e of entities) {
+      const record: NormalizedEntityRecord = {
+        sourceExternalId: e.externalId,
+        name: e.name,
+        aliases: e.aliases,
+        identifiers: [],
+        sanctions: [{ regime: 'UN Security Council', program: e.program }],
+        primaryCountryId: countryMap.get(this.normalizeCountryName(e.addressCountryName)) || null,
+        raw: e.raw,
+      };
+      const result = await this.resolution.resolve(record, source.id, llmBudget);
+      if (result.merged) merged++;
+      else created++;
+    }
+
+    await this.prisma.source.update({ where: { id: source.id }, data: { lastFetched: new Date() } });
+    const summary = { processed: entities.length, created, merged };
+    this.logger.log(
+      `UN Security Council entity ingestion: ${summary.processed} processed → ${summary.created} new entities, ${summary.merged} matched an existing entity`,
     );
     return summary;
   }
