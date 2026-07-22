@@ -20,6 +20,7 @@ import { SlovakiaOrsfAdapter } from './slovakia-orsf.adapter';
 import { JapanMofAdapter } from './japan-mof.adapter';
 import { SwitzerlandSecoAdapter } from './switzerland-seco.adapter';
 import { IrelandCroAdapter, type IrelandCroResult } from './ireland-cro.adapter';
+import { RomaniaAnafAdapter, normalizeRomaniaStatus } from './romania-anaf.adapter';
 import {
   EntityResolutionService,
   type NormalizedEntityRecord,
@@ -86,6 +87,7 @@ export class EntityIngestionService {
     private readonly japanMof: JapanMofAdapter,
     private readonly switzerlandSeco: SwitzerlandSecoAdapter,
     private readonly irelandCro: IrelandCroAdapter,
+    private readonly romaniaAnaf: RomaniaAnafAdapter,
     private readonly resolution: EntityResolutionService,
   ) {}
 
@@ -1227,6 +1229,60 @@ export class EntityIngestionService {
     };
     const result = await this.resolution.resolve(record, source.id);
     return { found: true, companyNumber: best.r.companyNumber, matchedExisting: result.entityId === entityId };
+  }
+
+  /**
+   * On-demand enrichment against Romania's ANAF/ONRC data (via the free,
+   * keyless demoanaf.ro API — 4M+ companies, confirmed live 2026-07-22).
+   * Genuinely rich: real reported administrators/directors, not just
+   * identity fields. Two-call shape like Companies House (search, then
+   * profile), but status only comes from the search hit — the profile
+   * endpoint doesn't repeat it.
+   */
+  async enrichWithRomaniaAnaf(
+    entityId: string,
+  ): Promise<{ found: boolean; cui?: string; matchedExisting?: boolean }> {
+    const entity = await this.prisma.entity.findUniqueOrThrow({
+      where: { id: entityId },
+      include: { aliases: true },
+    });
+    const source = await this.getOrCreateSource('Romania ANAF/ONRC', 'https://demoanaf.ro', 'company');
+    const canonicalNormalized = normalizeCompanyName(entity.canonicalName);
+    const candidateNames = [entity.canonicalName, ...entity.aliases.map((a) => a.name)];
+
+    let best: { r: { cui: number; name: string; statusLabel?: string }; score: number } | null = null;
+    for (const candidateName of candidateNames) {
+      if (!candidateName.trim()) continue;
+      const hits = await this.romaniaAnaf.searchByName(candidateName);
+      for (const r of hits) {
+        const score = bigramSimilarity(canonicalNormalized, normalizeCompanyName(r.name));
+        if (!best || score > best.score) best = { r, score };
+      }
+      if (best && best.score >= 0.8) break;
+    }
+    if (!best || best.score < 0.5) return { found: false };
+
+    const profile = await this.romaniaAnaf.fetchProfile(best.r.cui);
+    if (!profile) return { found: false };
+
+    const record: NormalizedEntityRecord = {
+      sourceExternalId: profile.cui,
+      name: profile.name,
+      aliases: [],
+      identifiers: [{ type: 'reg_number', value: profile.cui, countryId: 'RO' }],
+      primaryCountryId: 'RO',
+      profile: {
+        status: normalizeRomaniaStatus(best.r.statusLabel),
+        industryCode: profile.industryCode,
+        addressLine: profile.addressLine,
+        addressCity: profile.addressCity,
+        addressPostalCode: profile.addressPostalCode,
+      },
+      officers: profile.administrators.map((a) => ({ name: a.name, role: 'director' as const })),
+      raw: profile.raw,
+    };
+    const result = await this.resolution.resolve(record, source.id);
+    return { found: true, cui: profile.cui, matchedExisting: result.entityId === entityId };
   }
 
   /**
