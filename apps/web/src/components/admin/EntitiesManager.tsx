@@ -180,22 +180,34 @@ function EntityProfile({ id, onBack, onNavigate }: { id: string; onBack: () => v
 
 type Accent = 'conflict' | 'blue' | 'purple' | undefined;
 
-const ACCENT_TITLE: Record<string, string> = {
-  conflict: 'text-status-conflict',
-  blue: 'text-accent-blue',
-  purple: 'text-accent-purple',
+// Badge treatment (solid-ish tinted background, not just colored text) so a
+// section title reads as a distinct block at a glance instead of blending
+// into the surrounding gray labels — a plain color-on-dark-bg text alone
+// wasn't enough contrast to register as "this is the important one."
+const ACCENT_BADGE: Record<string, string> = {
+  conflict: 'bg-status-conflict/20 text-status-conflict',
+  blue: 'bg-accent-blue/20 text-accent-blue',
+  purple: 'bg-accent-purple/20 text-accent-purple',
 };
 
-const ACCENT_BORDER: Record<string, string> = {
-  conflict: 'border-status-conflict/25 bg-status-conflict/[0.06]',
-  blue: 'border-accent-blue/25 bg-accent-blue/[0.06]',
-  purple: 'border-accent-purple/25 bg-accent-purple/[0.06]',
+// Rows get a colored LEFT BORDER stripe (not just a faint tinted
+// background) — a stripe reads clearly even at a glance/small size, where a
+// subtle background tint alone tends to disappear against this app's very
+// dark surfaces.
+const ACCENT_ROW: Record<string, string> = {
+  conflict: 'border-l-4 border-l-status-conflict border-y border-r border-y-border/10 border-r-border/10 bg-status-conflict/[0.08]',
+  blue: 'border-l-4 border-l-accent-blue border-y border-r border-y-border/10 border-r-border/10 bg-accent-blue/[0.08]',
+  purple: 'border-l-4 border-l-accent-purple border-y border-r border-y-border/10 border-r-border/10 bg-accent-purple/[0.08]',
 };
 
 function Section({ title, accent, children }: { title: string; accent?: Accent; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <h3 className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${accent ? ACCENT_TITLE[accent] : 'text-text-tertiary'}`}>
+      <h3
+        className={`mb-2 inline-block rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+          accent ? ACCENT_BADGE[accent] : 'text-text-tertiary'
+        }`}
+      >
         {title}
       </h3>
       {children}
@@ -209,11 +221,7 @@ function Rows({ children }: { children: React.ReactNode }) {
 
 function Row({ accent, children }: { accent?: Accent; children: React.ReactNode }) {
   return (
-    <div
-      className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
-        accent ? ACCENT_BORDER[accent] : 'border-border/10 bg-bg-2'
-      }`}
-    >
+    <div className={`flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 ${accent ? ACCENT_ROW[accent] : 'border border-border/10 bg-bg-2'}`}>
       {children}
     </div>
   );
@@ -227,23 +235,33 @@ export function EntitiesManager() {
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [results, setResults] = useState<EntitySearchResult[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
 
-  const search = async (q: string, all: boolean) => {
-    setLoading(true);
+  const PAGE_SIZE = 50;
+
+  const search = async (q: string, all: boolean, offset = 0) => {
+    if (offset === 0) setLoading(true);
+    else setLoadingMore(true);
     try {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (all) params.set('all', 'true');
-      setResults(await authFetch<EntitySearchResult[]>(`/entities?${params.toString()}`));
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(offset));
+      const page = await authFetch<EntitySearchResult[]>(`/entities?${params.toString()}`);
+      setResults((prev) => (offset === 0 ? page : [...prev, ...page]));
+      setHasMore(page.length === PAGE_SIZE);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -346,6 +364,16 @@ export function EntitiesManager() {
           <p className="py-8 text-center text-xs text-text-tertiary">No entities found.</p>
         )}
       </motion.div>
+
+      {hasMore && (
+        <button
+          onClick={() => search(query.trim(), showAll, results.length)}
+          disabled={loadingMore}
+          className="mt-3 w-full rounded-lg border border-border/10 bg-bg-2 py-2 text-[12px] text-text-secondary hover:bg-bg-3 disabled:opacity-50"
+        >
+          {loadingMore ? 'Loading…' : 'Load more'}
+        </button>
+      )}
     </div>
   );
 }
