@@ -42,15 +42,43 @@ export class PersonMergeReviewService {
   }
 
   async listPending() {
+    // Surfaces WHICH companies each side is linked to and whether those
+    // companies are sanctioned (regime = whose list, program = the stated
+    // basis) — a reviewer deciding "is this the same person" needs that
+    // context, not just two bare names and a confidence score.
+    const officerRolesInclude = {
+      select: {
+        role: true,
+        entity: {
+          select: {
+            id: true,
+            canonicalName: true,
+            sanctions: { select: { regime: true, program: true } },
+          },
+        },
+      },
+    };
     return this.prisma.personMergeReview.findMany({
       where: { status: 'pending' },
       orderBy: { confidence: 'desc' },
       include: {
         personA: {
-          select: { id: true, canonicalName: true, primaryCountryId: true, aliases: { select: { name: true } } },
+          select: {
+            id: true,
+            canonicalName: true,
+            primaryCountryId: true,
+            aliases: { select: { name: true } },
+            officerRoles: officerRolesInclude,
+          },
         },
         personB: {
-          select: { id: true, canonicalName: true, primaryCountryId: true, aliases: { select: { name: true } } },
+          select: {
+            id: true,
+            canonicalName: true,
+            primaryCountryId: true,
+            aliases: { select: { name: true } },
+            officerRoles: officerRolesInclude,
+          },
         },
       },
     });

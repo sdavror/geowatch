@@ -2,25 +2,52 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import type { PersonMergeReviewEntry } from '@geowatch/shared-types';
+import type { PersonMergeReviewEntry, PersonReviewSide as PersonReviewSideData } from '@geowatch/shared-types';
 import { authFetch } from '@/lib/auth';
 
+const ROLE_LABEL: Record<string, string> = {
+  director: 'Director',
+  beneficial_owner: 'Beneficial owner',
+  officer: 'Officer',
+};
+
 function PersonSide({
-  name,
-  countryId,
-  aliases,
+  person,
+  fallbackName,
 }: {
-  name: string;
-  countryId: string | null | undefined;
-  aliases: string[] | undefined;
+  person: PersonReviewSideData | null | undefined;
+  fallbackName: string;
 }) {
   return (
     <div className="min-w-0 flex-1 rounded-lg border border-border/10 bg-bg-3 px-3 py-2">
-      <div className="truncate text-[12px] font-medium text-text-primary">{name}</div>
+      <div className="truncate text-[12px] font-medium text-text-primary">{person?.canonicalName ?? fallbackName}</div>
       <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-tertiary">
-        {countryId && <span>{countryId}</span>}
-        {aliases && aliases.length > 0 && <span className="truncate">{aliases.slice(0, 2).join(' · ')}</span>}
+        {person?.primaryCountryId && <span>{person.primaryCountryId}</span>}
+        {person && person.aliases.length > 0 && (
+          <span className="truncate">{person.aliases.slice(0, 2).map((a) => a.name).join(' · ')}</span>
+        )}
       </div>
+      {/* Which companies this person is an officer of, and whether those are
+          sanctioned (regime = whose list, program = the stated basis) — the
+          context a reviewer actually needs to judge "is this the same person". */}
+      {person && person.officerRoles.length > 0 && (
+        <div className="mt-1.5 flex flex-col gap-1">
+          {person.officerRoles.map(({ role, entity }, idx) => (
+            <div key={`${entity.id}-${idx}`} className="flex items-center gap-1.5 text-[10px]">
+              <span className="truncate text-text-secondary">{entity.canonicalName}</span>
+              <span className="flex-shrink-0 text-text-tertiary">· {ROLE_LABEL[role] ?? role}</span>
+              {entity.sanctions.length > 0 && (
+                <span
+                  className="flex-shrink-0 rounded-full bg-status-conflict/15 px-1.5 py-0.5 font-semibold text-status-conflict"
+                  title={entity.sanctions.map((s) => `${s.regime}: ${s.program}`).join(' · ')}
+                >
+                  ⚠ {entity.sanctions.length} sanction{entity.sanctions.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -173,18 +200,10 @@ export function PersonReviewsManager() {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <PersonSide
-                name={r.personA?.canonicalName ?? r.personACanonicalName ?? 'Unknown'}
-                countryId={r.personA?.primaryCountryId}
-                aliases={r.personA?.aliases.map((a) => a.name)}
-              />
-              <span className="flex-shrink-0 text-[11px] text-text-tertiary">vs</span>
-              <PersonSide
-                name={r.personB?.canonicalName ?? r.personBCanonicalName ?? 'Unknown'}
-                countryId={r.personB?.primaryCountryId}
-                aliases={r.personB?.aliases.map((a) => a.name)}
-              />
+            <div className="flex items-start gap-2">
+              <PersonSide person={r.personA} fallbackName={r.personACanonicalName ?? 'Unknown'} />
+              <span className="mt-2 flex-shrink-0 text-[11px] text-text-tertiary">vs</span>
+              <PersonSide person={r.personB} fallbackName={r.personBCanonicalName ?? 'Unknown'} />
             </div>
 
             <div className="mt-2 flex justify-end gap-2">

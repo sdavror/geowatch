@@ -412,6 +412,21 @@ export interface EntityMergeReviewEntry {
   entityB: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
 }
 
+export interface PersonReviewSide {
+  id: string;
+  canonicalName: string;
+  primaryCountryId: string | null;
+  aliases: { name: string }[];
+  // Which companies this person is an officer of, and whether those
+  // companies are sanctioned — regime is WHOSE list (OFAC/EU/UK OFSI/...),
+  // program is the stated basis. Lets a reviewer see "is this the same
+  // person" in context instead of just two bare names.
+  officerRoles: {
+    role: string;
+    entity: { id: string; canonicalName: string; sanctions: { regime: string; program: string }[] };
+  }[];
+}
+
 // GET /admin/entity-resolution/person-reviews
 export interface PersonMergeReviewEntry {
   id: string;
@@ -429,8 +444,8 @@ export interface PersonMergeReviewEntry {
   createdAt: string;
   personACanonicalName: string | null;
   personBCanonicalName: string | null;
-  personA: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
-  personB: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
+  personA: PersonReviewSide | null;
+  personB: PersonReviewSide | null;
 }
 
 export interface Article {
