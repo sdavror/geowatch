@@ -412,6 +412,27 @@ export interface EntityMergeReviewEntry {
   entityB: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
 }
 
+// GET /admin/entity-resolution/person-reviews
+export interface PersonMergeReviewEntry {
+  id: string;
+  confidence: number; // 0-100
+  matchedOn: {
+    method?: 'fuzzy' | 'llm';
+    nameSimilarity?: number;
+    countryMatch?: boolean;
+    role?: string;
+    llmSecondPassChecked?: boolean;
+    llmSecondPassReasoning?: string;
+    [key: string]: unknown;
+  };
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  personACanonicalName: string | null;
+  personBCanonicalName: string | null;
+  personA: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
+  personB: { id: string; canonicalName: string; primaryCountryId: string | null; aliases: { name: string }[] } | null;
+}
+
 export interface Article {
   id: string;
   sourceId?: string | null;
@@ -467,6 +488,7 @@ export interface DashboardStats {
   comments7d: number;
   unreadMessages: number;
   pendingEntityReviews: number;
+  pendingPersonReviews: number;
 }
 
 // ─────────────────────────────────────────────

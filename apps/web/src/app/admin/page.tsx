@@ -11,6 +11,7 @@ import { DashboardOverview } from '@/components/admin/DashboardOverview';
 import { SourcesManager } from '@/components/admin/SourcesManager';
 import { EntitiesManager } from '@/components/admin/EntitiesManager';
 import { EntityReviewsManager } from '@/components/admin/EntityReviewsManager';
+import { PersonReviewsManager } from '@/components/admin/PersonReviewsManager';
 import { EditorWorkspace } from '@/components/admin/EditorWorkspace';
 import { UserManager } from '@/components/admin/UserManager';
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm';
@@ -475,6 +476,7 @@ export default function AdminPage() {
       {section === 'sources' && <SourcesManager />}
       {section === 'entities' && <EntitiesManager />}
       {section === 'entity-reviews' && <EntityReviewsManager />}
+      {section === 'person-reviews' && <PersonReviewsManager />}
       {section === 'users' && isOwner && <UserManager />}
       {section === 'settings' && (
         <div>

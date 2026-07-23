@@ -8,6 +8,8 @@ import type { TokenPayload } from '../auth/jwt.util';
 import { EntityIngestionService } from './entity-ingestion.service';
 import { EntityMergeReviewService } from './entity-merge-review.service';
 import { EntityMentionService } from './entity-mention.service';
+import { PersonMergeReviewService } from './person-merge-review.service';
+import { PersonResolutionService } from './person-resolution.service';
 
 class ResolveByNameDto {
   @IsString()
@@ -28,6 +30,8 @@ export class EntityResolutionAdminController {
     private readonly ingestion: EntityIngestionService,
     private readonly reviews: EntityMergeReviewService,
     private readonly mentions: EntityMentionService,
+    private readonly personReviews: PersonMergeReviewService,
+    private readonly personResolution: PersonResolutionService,
   ) {}
 
   @Post('ingest/ofac')
@@ -236,5 +240,46 @@ export class EntityResolutionAdminController {
   @Post('reviews/llm-second-pass')
   llmSecondPassReviews(@CurrentUser() user: TokenPayload, @Query('limit') limit?: string) {
     return this.reviews.llmJudgeUnreviewedFuzzy(user.sub, limit ? parseInt(limit, 10) : undefined);
+  }
+
+  /**
+   * Cross-entity Person identity resolution — a separate, more conservative
+   * review queue than the entity one above (see PersonMergeReviewService).
+   * There is deliberately no auto-approve endpoint here: every person merge
+   * requires a human via approve/:id below.
+   */
+  @Get('person-reviews')
+  listPersonReviews() {
+    return this.personReviews.listPending();
+  }
+
+  @Post('person-reviews/:id/approve')
+  approvePersonReview(@Param('id') id: string, @CurrentUser() user: TokenPayload) {
+    return this.personReviews.approve(id, user.sub);
+  }
+
+  @Post('person-reviews/:id/reject')
+  rejectPersonReview(@Param('id') id: string, @CurrentUser() user: TokenPayload) {
+    return this.personReviews.reject(id, user.sub);
+  }
+
+  /**
+   * Extends Phase 3 to fuzzy person reviews that never got an LLM opinion
+   * (auto-reject only — see PersonMergeReviewService.llmJudgeUnreviewedFuzzy).
+   */
+  @Post('person-reviews/llm-second-pass')
+  llmSecondPassPersonReviews(@CurrentUser() user: TokenPayload, @Query('limit') limit?: string) {
+    return this.personReviews.llmJudgeUnreviewedFuzzy(user.sub, limit ? parseInt(limit, 10) : undefined);
+  }
+
+  /**
+   * One-time (safe to re-run) backfill resolving pre-existing EntityOfficer
+   * rows (ingested before this feature existed) to a Person. Call
+   * repeatedly with a limit to work through the backlog — see
+   * PersonResolutionService.backfillOfficerPersons.
+   */
+  @Post('persons/backfill')
+  backfillPersons(@Query('limit') limit?: string) {
+    return this.personResolution.backfillOfficerPersons(limit ? parseInt(limit, 10) : undefined);
   }
 }
