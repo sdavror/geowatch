@@ -20,6 +20,7 @@ import { formatRelativeTime } from '@/lib/formatRelativeTime';
 import { ArticleBody } from '@/components/article/ArticleBody';
 import { StatusBadge } from './StatusBadge';
 import { ResearchPanel } from './ResearchPanel';
+import { EntityMentionsPanel } from './EntityMentionsPanel';
 
 const CATEGORIES: EventCategory[] = ['military', 'economic', 'political', 'humanitarian'];
 const CONTENT_TYPES: ArticleContentType[] = ['analysis', 'opinion', 'exclusive', 'explainer', 'fact_check', 'live'];
@@ -567,6 +568,7 @@ export function EditorWorkspace({ article, initial, onClose }: EditorWorkspacePr
                 )}
               </div>
               <ResearchPanel text={`${draft.title}. ${draft.body}`.slice(0, 1900)} />
+              <EntityMentionsPanel articleId={articleId} />
             </div>
           </div>
         </div>

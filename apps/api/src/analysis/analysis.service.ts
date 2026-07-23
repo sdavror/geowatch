@@ -6,6 +6,7 @@ import { WORLD_BANK_INDICATORS } from '../macro/worldbank.adapter';
 import { IMF_WEO_INDICATORS } from '../macro/imf-weo.adapter';
 import { matchCountries } from '../ingestion/country-matcher.util';
 import { EnergyService } from '../macro/energy.service';
+import { EntityMentionService } from '../entity-resolution/entity-mention.service';
 
 const INDICATOR_LABELS: Record<string, string> = {
   ...Object.fromEntries(Object.entries(WORLD_BANK_INDICATORS).map(([code, m]) => [`WB:${code}`, m.name])),
@@ -29,6 +30,11 @@ interface CountryContext {
   healthScore: { value: unknown } | null;
   indicators: Array<{ indicatorCode: string; value: unknown; period: Date; isForecast: boolean }>;
   sanctions: { entityCount: number } | null;
+  // Real, named sanctioned companies from the Entity Resolution engine —
+  // distinct from `sanctions` above (an OpenSanctions aggregate count with
+  // no names). Additive, not a replacement: gives the model concrete
+  // examples to reason about instead of just a number.
+  sanctionedEntities: Array<{ canonicalName: string; regimes: string[] }>;
   riskHistory: { score: unknown } | null;
   recentArticles: Array<{ id: string; title: string; category: string | null; publishedAt: Date | null }>;
   officialStatements: Array<{ title: string; url: string; publishedAt: Date | null; source: { name: string } | null }>;
@@ -46,6 +52,7 @@ export class AnalysisService {
     private readonly prisma: PrismaService,
     private readonly ollama: OllamaClient,
     private readonly energy: EnergyService,
+    private readonly entityMentions: EntityMentionService,
   ) {}
 
   async generateCountryDraft(countryId: string): Promise<GeneratedDraft> {
@@ -64,20 +71,25 @@ export class AnalysisService {
       );
     }
 
-    const [involved, energyBenchmarks] = await Promise.all([
+    const [involved, energyBenchmarks, namedEntities] = await Promise.all([
       Promise.all(involvedIds.map((id) => this.gatherCountryContext(id))),
       this.energy.latestBenchmarks(),
+      // Directly named in the event text — catches a company the country
+      // matcher's per-country lookup would miss (unknown/unmatched
+      // primaryCountryId, or simply not among the up-to-4 involved
+      // countries' sample of 8), independent of geography.
+      this.entityMentions.matchText(eventText),
     ]);
     const regions = [...new Set(involved.map((c) => c.country.region).filter((r): r is string => !!r))];
     const peers = await this.gatherRegionalPeers(regions, involvedIds);
 
-    const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks);
+    const prompt = this.buildEventPrompt(eventText, involved, peers, energyBenchmarks, namedEntities);
     const raw = await this.ollama.generateJson<Record<string, unknown>>(prompt);
 
     // Built from what was actually non-empty when the prompt was assembled
     // — not asked of the model, so the citation list can't hallucinate a
     // source that wasn't really used.
-    const sources = [...new Set([...involved.flatMap((ctx) => this.citationsFor(ctx)), ...(energyBenchmarks.length > 0 ? ['EIA (energy spot prices)'] : []), ...(peers.length > 0 ? ['Apolitics Country Health Index (regional peers)'] : [])])];
+    const sources = [...new Set([...involved.flatMap((ctx) => this.citationsFor(ctx)), ...(energyBenchmarks.length > 0 ? ['EIA (energy spot prices)'] : []), ...(peers.length > 0 ? ['Apolitics Country Health Index (regional peers)'] : []), ...(namedEntities.length > 0 ? ['Apolitics Entity Resolution (OFAC/EU/OFSI/UN and other sanctions sources)'] : [])])];
 
     return this.repairEventReport(raw, sources);
   }
@@ -136,6 +148,14 @@ export class AnalysisService {
           value: String(ctx.sanctions.entityCount),
           period: 'latest',
           source: 'OpenSanctions',
+        });
+      }
+      if (ctx.sanctionedEntities.length > 0) {
+        facts.push({
+          label: 'Named sanctioned companies (sample)',
+          value: ctx.sanctionedEntities.map((e) => e.canonicalName).join(', '),
+          period: 'latest',
+          source: 'Apolitics Entity Resolution',
         });
       }
       const year = ctx.tradePartners[0]?.year;
@@ -205,7 +225,7 @@ export class AnalysisService {
     });
     if (!country) throw new NotFoundException(`Country "${id}" not found`);
 
-    const [healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradeFlows] = await Promise.all([
+    const [healthScore, indicators, sanctions, sanctionedEntityRows, recentArticles, riskHistory, officialStatements, mediaReports, tradeFlows] = await Promise.all([
       this.prisma.countryHealthScore.findFirst({
         where: { countryId: id, scoreName: 'country_health' },
         orderBy: { period: 'desc' },
@@ -218,6 +238,15 @@ export class AnalysisService {
       this.prisma.sanctionRecord.findFirst({
         where: { countryId: id, program: 'opensanctions:all' },
         orderBy: { asOf: 'desc' },
+      }),
+      // Named examples, not just a count — capped since a prompt only needs
+      // a handful of concrete companies to reason about, not an exhaustive
+      // list (Russia alone has 4,000+).
+      this.prisma.entity.findMany({
+        where: { primaryCountryId: id, sanctions: { some: {} } },
+        select: { canonicalName: true, sanctions: { select: { regime: true } } },
+        take: 8,
+        orderBy: { updatedAt: 'desc' },
       }),
       this.prisma.article.findMany({
         where: { countryId: id, published: true },
@@ -288,7 +317,12 @@ export class AnalysisService {
       valueUsd: t.valueUsd,
     }));
 
-    return { country, healthScore, indicators, sanctions, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners, conflict };
+    const sanctionedEntities = sanctionedEntityRows.map((e) => ({
+      canonicalName: e.canonicalName,
+      regimes: [...new Set(e.sanctions.map((s) => s.regime))],
+    }));
+
+    return { country, healthScore, indicators, sanctions, sanctionedEntities, recentArticles, riskHistory, officialStatements, mediaReports, tradePartners, conflict };
   }
 
   /**
@@ -364,6 +398,14 @@ export class AnalysisService {
     if (ctx.sanctions) {
       lines.push(`- ${ctx.sanctions.entityCount} sanctioned entities associated with this country (OpenSanctions aggregate).`);
     }
+    if (ctx.sanctionedEntities.length > 0) {
+      lines.push(
+        '- Specific sanctioned companies on file (Entity Resolution engine, real cross-source-resolved entities, not an exhaustive list):',
+      );
+      for (const e of ctx.sanctionedEntities) {
+        lines.push(`  - ${e.canonicalName} (${e.regimes.join(', ')})`);
+      }
+    }
     if (ctx.riskHistory) {
       lines.push(`- Conflict/stability risk score: ${Number(ctx.riskHistory.score).toFixed(1)}/10, status: ${ctx.country.status}.`);
     }
@@ -425,6 +467,7 @@ export class AnalysisService {
     if (ctx.indicators.some((i) => !i.isForecast)) cites.push('World Bank (economic indicators)');
     if (ctx.indicators.some((i) => i.isForecast)) cites.push('IMF World Economic Outlook (forecasts)');
     if (ctx.sanctions) cites.push('OpenSanctions');
+    if (ctx.sanctionedEntities.length > 0) cites.push('Apolitics Entity Resolution (OFAC/EU/OFSI/UN and other sanctions sources)');
     if (ctx.tradePartners.length > 0) cites.push('UN Comtrade (bilateral trade data)');
     if (ctx.conflict) cites.push('UCDP Georeferenced Event Dataset (conflict events and fatalities)');
     if (ctx.recentArticles.length > 0) cites.push('Apolitics published coverage');
@@ -467,6 +510,7 @@ export class AnalysisService {
     involved: CountryContext[],
     peers: Array<{ id: string; name: string; region: string | null; healthScore: number | null }>,
     energyBenchmarks: Array<{ name: string; latestPeriod: string; value: number; units: string; change30dPct: number | null }> = [],
+    namedEntities: Array<{ canonicalName: string; matchedText: string; regimes: string[] }> = [],
   ): string {
     const lines: string[] = [];
     lines.push(
@@ -482,6 +526,13 @@ export class AnalysisService {
     );
     lines.push('', this.periodizationRules());
     lines.push('', `REPORTED EVENT (unverified): ${eventText.trim()}`);
+
+    if (namedEntities.length > 0) {
+      lines.push('', 'SANCTIONED ENTITIES NAMED IN THE EVENT (Apolitics Entity Resolution — real, cross-source-resolved companies):');
+      for (const e of namedEntities) {
+        lines.push(`  - ${e.canonicalName} (matched as "${e.matchedText}") — sanctioned under: ${e.regimes.join(', ')}`);
+      }
+    }
 
     if (energyBenchmarks.length > 0) {
       lines.push('', 'GLOBAL ENERGY BENCHMARKS (market context for energy-related consequences):');

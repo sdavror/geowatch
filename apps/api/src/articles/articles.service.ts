@@ -1,17 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ArticleStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis.service';
 import { ListArticlesQueryDto } from './dto/list-articles-query.dto';
+import { EntityMentionService } from '../entity-resolution/entity-mention.service';
 
 const CACHE_TTL_LIST_SECONDS = 60; // short TTL — this is a live news feed
 const CACHE_TTL_DETAIL_SECONDS = 300;
 
 @Injectable()
 export class ArticlesService {
+  private readonly logger = new Logger(ArticlesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly entityMentions: EntityMentionService,
   ) {}
 
   async findAll(query: ListArticlesQueryDto) {
@@ -359,6 +363,7 @@ export class ArticlesService {
       include: { country: true },
     });
     await this.invalidate();
+    await this.scanForEntityMentions(article.id, article.title, article.body);
     return this.serializeArticle(article, true);
   }
 
@@ -440,7 +445,27 @@ export class ArticlesService {
       include: { country: true },
     });
     await this.invalidate(id);
+    // Only worth re-scanning when the text actually changed — autosave
+    // fires every few seconds, and most of those ticks touch only
+    // status/tags/scheduling, not the words a mention scan reads.
+    if (contentTouched) await this.scanForEntityMentions(article.id, article.title, article.body);
     return this.serializeArticle(article, true);
+  }
+
+  /**
+   * Sanctioned-entity mention scan for manually-authored/edited articles —
+   * previously this only ever ran for RSS-ingested stories (see
+   * ingestion.service.ts), so anything written or edited directly in the
+   * admin editor was silently never scanned at all, and its already-built
+   * `GET /articles/:id/entities` endpoint had nothing to return. Best-effort:
+   * a scan failure must never break saving an article.
+   */
+  private async scanForEntityMentions(articleId: string, title: string, body: string | null): Promise<void> {
+    try {
+      await this.entityMentions.scanArticle(articleId, title, body);
+    } catch (err) {
+      this.logger.warn(`Entity-mention scan failed for article ${articleId}: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /**
