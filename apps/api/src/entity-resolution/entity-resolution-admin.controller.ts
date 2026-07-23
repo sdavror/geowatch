@@ -7,6 +7,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { TokenPayload } from '../auth/jwt.util';
 import { EntityIngestionService } from './entity-ingestion.service';
 import { EntityMergeReviewService } from './entity-merge-review.service';
+import { EntityMentionService } from './entity-mention.service';
 
 class ResolveByNameDto {
   @IsString()
@@ -26,6 +27,7 @@ export class EntityResolutionAdminController {
   constructor(
     private readonly ingestion: EntityIngestionService,
     private readonly reviews: EntityMergeReviewService,
+    private readonly mentions: EntityMentionService,
   ) {}
 
   @Post('ingest/ofac')
@@ -86,6 +88,41 @@ export class EntityResolutionAdminController {
   @Post('ingest/un-security-council')
   ingestUnSecurityCouncil() {
     return this.ingestion.ingestUnSecurityCouncil();
+  }
+
+  /**
+   * Manual trigger for the weekly registry sweeps (see entity-ingestion.
+   * service.ts's scheduledXSweep methods) — useful to run one on demand
+   * rather than waiting for its scheduled weekday.
+   */
+  @Post('sweep/norway')
+  sweepNorway() {
+    return this.ingestion.scheduledNorwaySweep();
+  }
+
+  @Post('sweep/finland')
+  sweepFinland() {
+    return this.ingestion.scheduledFinlandSweep();
+  }
+
+  @Post('sweep/switzerland-zefix')
+  sweepSwitzerlandZefix() {
+    return this.ingestion.scheduledSwitzerlandZefixSweep();
+  }
+
+  @Post('sweep/slovakia')
+  sweepSlovakia() {
+    return this.ingestion.scheduledSlovakiaSweep();
+  }
+
+  @Post('sweep/ireland-cro')
+  sweepIrelandCro() {
+    return this.ingestion.scheduledIrelandCroSweep();
+  }
+
+  @Post('sweep/romania-anaf')
+  sweepRomaniaAnaf() {
+    return this.ingestion.scheduledRomaniaAnafSweep();
   }
 
   @Post('enrich/:entityId/gleif')
@@ -149,6 +186,12 @@ export class EntityResolutionAdminController {
   @Post('backfill/company-profile')
   backfillCompanyProfile() {
     return this.ingestion.backfillCompanyProfile();
+  }
+
+  /** Scans not-yet-scanned articles for sanctioned-entity mentions. Call repeatedly to work through the backlog. */
+  @Post('backfill/article-mentions')
+  backfillArticleMentions(@Query('limit') limit?: string) {
+    return this.mentions.backfill(limit ? parseInt(limit, 10) : undefined);
   }
 
   /** Resolves a bare name (no identifiers) — verification tool now, seed for article-mention linking later. */

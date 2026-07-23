@@ -39,6 +39,11 @@ export class ArticlesController {
     return this.articlesService.findOne(id);
   }
 
+  @Get(':id/entities')
+  findEntityMentions(@Param('id') id: string) {
+    return this.articlesService.findEntityMentions(id);
+  }
+
   @Post(':id/view')
   recordView(@Param('id') id: string, @Body() dto: RecordViewDto) {
     return this.articlesService.recordView(id, dto.sessionId, dto.referrer);

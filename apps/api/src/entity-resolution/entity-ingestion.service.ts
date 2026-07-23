@@ -184,6 +184,146 @@ export class EntityIngestionService {
     }
   }
 
+  // Japan MOF and Switzerland SECO shipped later than the sources above and
+  // never got a scheduled refresh — admin-trigger-only since. Same
+  // staggered-Monday slot as every other bulk sanctions source.
+  @Cron('0 30 8 * * 1') // Mondays 08:30 UTC — staggered after Latvia
+  async scheduledJapanMofRefresh() {
+    try {
+      await this.ingestJapanMof();
+    } catch (err) {
+      this.logger.error(`Scheduled Japan MOF entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  @Cron('0 0 9 * * 1') // Mondays 09:00 UTC — staggered after Japan MOF
+  async scheduledSwitzerlandSecoRefresh() {
+    try {
+      await this.ingestSwitzerlandSeco();
+    } catch (err) {
+      this.logger.error(`Scheduled Switzerland SECO entity ingestion failed: ${(err as Error).message}`);
+    }
+  }
+
+  // On-demand general registries (Norway/Finland/Switzerland Zefix/
+  // Slovakia/Ireland/Romania) have no bulk "list everything" endpoint —
+  // they're search-by-name lookups the admin UI can trigger per entity, but
+  // nothing ever swept the EXISTING sanctioned-entity pool against a newly
+  // added registry to discover cross-border registrations no one searched
+  // for yet (e.g. a Russian sanctioned company's unnoticed Norwegian
+  // subsidiary). Small weekly batches, spread across different weekdays and
+  // paced between calls — conservative on purpose: several of these are
+  // free/undocumented third-party APIs (Slovakia's aggregator, Switzerland
+  // Zefix's frontend endpoint) this project has already been careful not to
+  // hammer (see the Comtrade/trade.gov rate-limit incidents in project
+  // history). See sweepRegistry() for how a batch converges on full
+  // coverage over time instead of re-trying the same failures forever.
+  private readonly REGISTRY_SWEEP_BATCH_SIZE = 30;
+
+  @Cron('0 0 10 * * 2') // Tuesdays 10:00 UTC
+  async scheduledNorwaySweep() {
+    return this.runRegistrySweep('Norway Brønnøysund Register', 'https://data.brreg.no/enhetsregisteret/api', (id) =>
+      this.enrichWithNorwayRegistry(id),
+    );
+  }
+
+  @Cron('0 0 10 * * 3') // Wednesdays 10:00 UTC
+  async scheduledFinlandSweep() {
+    return this.runRegistrySweep('Finland PRH YTJ Register', 'https://avoindata.prh.fi', (id) =>
+      this.enrichWithFinlandRegistry(id),
+    );
+  }
+
+  @Cron('0 0 10 * * 4') // Thursdays 10:00 UTC
+  async scheduledSwitzerlandZefixSweep() {
+    return this.runRegistrySweep('Switzerland Zefix', 'https://www.zefix.ch', (id) =>
+      this.enrichWithSwitzerlandRegistry(id),
+    );
+  }
+
+  @Cron('0 0 10 * * 5') // Fridays 10:00 UTC
+  async scheduledSlovakiaSweep() {
+    return this.runRegistrySweep('Slovakia ORSF Register', 'https://orsf.sk', (id) =>
+      this.enrichWithSlovakiaRegistry(id),
+    );
+  }
+
+  @Cron('0 0 10 * * 6') // Saturdays 10:00 UTC
+  async scheduledIrelandCroSweep() {
+    return this.runRegistrySweep('Ireland CRO Open Data', 'https://opendata.cro.ie', (id) =>
+      this.enrichWithIrelandCro(id),
+    );
+  }
+
+  @Cron('0 0 10 * * 0') // Sundays 10:00 UTC
+  async scheduledRomaniaAnafSweep() {
+    return this.runRegistrySweep('Romania ANAF/ONRC', 'https://demoanaf.ro', (id) => this.enrichWithRomaniaAnaf(id));
+  }
+
+  /**
+   * Finds sanctioned entities never yet attempted against this registry
+   * (EntityEnrichmentAttempt has no row for them), tries each one, and
+   * records the attempt either way — a genuine "not found" still counts as
+   * attempted, so the sweep moves on to new candidates next week instead of
+   * re-checking the same misses forever. Errors (network hiccup, a
+   * temporarily-down endpoint) are logged but NOT recorded as an attempt,
+   * so those genuinely get retried.
+   */
+  // Not private: called directly both by the @Cron-decorated scheduledXSweep
+  // methods above (which need it never to throw — an uncaught rejection in
+  // a cron handler shouldn't take anything down, same policy as every other
+  // scheduled* method in this file) and by the admin controller's on-demand
+  // sweep endpoints (which want the real {attempted, found} counts back,
+  // not just a fire-and-forget). Returning a zeroed result on total failure
+  // rather than throwing satisfies both callers with one implementation.
+  async runRegistrySweep(
+    sourceName: string,
+    sourceUrl: string,
+    enrich: (entityId: string) => Promise<{ found: boolean }>,
+  ): Promise<{ attempted: number; found: number }> {
+    let source: { id: string };
+    let candidates: { id: string }[];
+    try {
+      source = await this.getOrCreateSource(sourceName, sourceUrl, 'company');
+      candidates = await this.prisma.entity.findMany({
+        where: {
+          sanctions: { some: {} },
+          enrichmentAttempts: { none: { sourceId: source.id } },
+        },
+        select: { id: true },
+        take: this.REGISTRY_SWEEP_BATCH_SIZE,
+        orderBy: { createdAt: 'asc' },
+      });
+    } catch (err) {
+      this.logger.error(`Registry sweep (${sourceName}) could not start: ${(err as Error).message}`);
+      return { attempted: 0, found: 0 };
+    }
+
+    let found = 0;
+    for (const { id } of candidates) {
+      try {
+        const result = await enrich(id);
+        if (result.found) found++;
+        await this.prisma.entityEnrichmentAttempt.upsert({
+          where: { entityId_sourceId: { entityId: id, sourceId: source.id } },
+          create: { entityId: id, sourceId: source.id, found: result.found },
+          update: { found: result.found, attemptedAt: new Date() },
+        });
+      } catch (err) {
+        this.logger.warn(`Registry sweep (${sourceName}) failed for entity ${id}: ${(err as Error).message}`);
+      }
+      // Pacing between calls — a good-citizen delay against free/
+      // undocumented third-party APIs, not a rate limit this project has
+      // documented numbers for.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
+    this.logger.log(
+      `Registry sweep (${sourceName}): ${candidates.length} attempted, ${found} found new matches`,
+    );
+    return { attempted: candidates.length, found };
+  }
+
   async ingestOfac(): Promise<IngestSummary> {
     const source = await this.getOrCreateSource(
       'OFAC SDN',

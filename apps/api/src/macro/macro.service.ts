@@ -224,7 +224,20 @@ export class MacroService implements OnModuleInit {
     const sanctionCounts = new Map(latestSanctions.map((s) => [s.countryId, s.entityCount]));
 
     const results = computeCountryHealth(latestByIndicator, sanctionCounts);
+    const entityExposure = await this.computeSanctionedEntityExposure();
+
     for (const r of results) {
+      // Informational only — deliberately NOT folded into weightedSum/value
+      // above (that would double-count "sanctions pressure" against the
+      // pre-existing OpenSanctions-aggregate component, and this project's
+      // scoring methodology is versioned/deliberate about changes like
+      // that). A real signal from the Entity Resolution engine's own
+      // per-entity data, exposed alongside the score rather than baked
+      // into it, same way a client already reads other component keys.
+      const exposure = entityExposure.get(r.countryId);
+      const components =
+        exposure !== undefined ? { ...r.components, sanctionedEntityCount: exposure } : r.components;
+
       await this.prisma.countryHealthScore.upsert({
         where: {
           countryId_scoreName_methodology_period: {
@@ -234,17 +247,39 @@ export class MacroService implements OnModuleInit {
             period,
           },
         },
-        update: { value: r.value, components: r.components },
+        update: { value: r.value, components },
         create: {
           countryId: r.countryId,
           scoreName: 'country_health',
           methodology: COUNTRY_HEALTH_METHODOLOGY,
           period,
           value: r.value,
-          components: r.components,
+          components,
         },
       });
     }
     return results.length;
+  }
+
+  /**
+   * Count of sanctioned Entities per country, from the Entity Resolution
+   * engine's own per-entity data (Entity.primaryCountryId + EntitySanction)
+   * — distinct from the OpenSanctions-aggregate SanctionRecord pipeline
+   * already feeding the composite score above. Only covers countries that
+   * also get a scored CountryHealthScore row this run (see computeScores);
+   * a country with real entity exposure but insufficient macro-indicator
+   * coverage to be scored at all won't get this attached anywhere yet.
+   */
+  private async computeSanctionedEntityExposure(): Promise<Map<string, number>> {
+    const sanctioned = await this.prisma.entity.findMany({
+      where: { primaryCountryId: { not: null }, sanctions: { some: {} } },
+      select: { primaryCountryId: true },
+    });
+    const counts = new Map<string, number>();
+    for (const e of sanctioned) {
+      const id = e.primaryCountryId as string;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
   }
 }

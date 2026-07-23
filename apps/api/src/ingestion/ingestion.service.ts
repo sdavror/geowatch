@@ -8,6 +8,7 @@ import { TelegramAdapter } from './telegram.adapter';
 import { contentHash } from './dedup.util';
 import { classifyCategory } from './category-classifier.util';
 import { matchCountry } from './country-matcher.util';
+import { EntityMentionService } from '../entity-resolution/entity-mention.service';
 
 // Diverse-by-design set of free, no-key RSS feeds spanning different
 // regions/outlets — matches the "apolitically about politics" positioning
@@ -203,6 +204,7 @@ export class IngestionService implements OnModuleInit {
     private readonly rss: RssAdapter,
     private readonly newsApi: NewsApiAdapter,
     private readonly telegram: TelegramAdapter,
+    private readonly entityMentions: EntityMentionService,
   ) {}
 
   async onModuleInit() {
@@ -369,7 +371,7 @@ export class IngestionService implements OnModuleInit {
     const countryId = matchCountry(item.title, countries) ?? sourceCountryId;
 
     try {
-      await this.prisma.article.create({
+      const created = await this.prisma.article.create({
         data: {
           sourceId,
           countryId,
@@ -390,6 +392,13 @@ export class IngestionService implements OnModuleInit {
           tags: [],
         },
       });
+      // Sanctioned-entity mention scan — best-effort, never fails ingestion
+      // itself (a bad scan on one story shouldn't drop the whole item).
+      try {
+        await this.entityMentions.scanArticle(created.id, created.title, created.body);
+      } catch (err) {
+        this.logger.warn(`Entity-mention scan failed for "${item.title}": ${err instanceof Error ? err.message : err}`);
+      }
       return true;
     } catch (err) {
       // Unique-constraint race (two feeds syndicating the same story in the
