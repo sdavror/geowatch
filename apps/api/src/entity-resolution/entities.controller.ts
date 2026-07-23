@@ -12,8 +12,17 @@ export class EntitiesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  async search(@Query('q') q?: string, @Query('all') all?: string) {
+  async search(
+    @Query('q') q?: string,
+    @Query('all') all?: string,
+    @Query('limit') limitParam?: string,
+    @Query('offset') offsetParam?: string,
+  ) {
     const query = q?.trim();
+    // Capped at 100/page — plenty for "load more" browsing without letting
+    // an unbounded limit param turn this into an accidental full-table dump.
+    const limit = Math.min(Math.max(parseInt(limitParam ?? '', 10) || 20, 1), 100);
+    const offset = Math.max(parseInt(offsetParam ?? '', 10) || 0, 0);
     // Default (no search query) view: hide SEC EDGAR's ~8k reference-only
     // US public companies — they're never sanctioned themselves, added
     // purely so a sanctioned entity that also has SEC filings can
@@ -36,7 +45,8 @@ export class EntitiesController {
           : {}),
         ...(restrictToSanctioned ? { sanctions: { some: {} } } : {}),
       },
-      take: 20,
+      take: limit,
+      skip: offset,
       // Browsing (no query): most-sanctioned first, so the entities this
       // tool exists for lead the list instead of whatever was last
       // touched by an unrelated enrichment sweep. Searching: most-recently

@@ -17,22 +17,33 @@ const ROLE_LABEL: Record<string, string> = {
 
 type Accent = 'conflict' | 'blue' | 'purple' | undefined;
 
-const ACCENT_TITLE: Record<string, string> = {
-  conflict: 'text-status-conflict',
-  blue: 'text-accent-blue',
-  purple: 'text-accent-purple',
+// Badge treatment (solid-ish tinted background, not just colored text) so a
+// section title reads as a distinct block at a glance — plain color-on-dark
+// text alone wasn't enough contrast to register as "this is the important
+// one" against this app's very dark surfaces.
+const ACCENT_BADGE: Record<string, string> = {
+  conflict: 'bg-status-conflict/20 text-status-conflict',
+  blue: 'bg-accent-blue/20 text-accent-blue',
+  purple: 'bg-accent-purple/20 text-accent-purple',
 };
 
-const ACCENT_BORDER: Record<string, string> = {
-  conflict: 'border-status-conflict/25 bg-status-conflict/[0.06]',
-  blue: 'border-accent-blue/25 bg-accent-blue/[0.06]',
-  purple: 'border-accent-purple/25 bg-accent-purple/[0.06]',
+// Rows get a colored LEFT BORDER stripe (not just a faint tinted
+// background) — a stripe reads clearly even at a glance, where a subtle
+// background tint alone tends to disappear.
+const ACCENT_ROW: Record<string, string> = {
+  conflict: 'border-l-4 border-l-status-conflict border-y border-r border-y-border/10 border-r-border/10 bg-status-conflict/[0.08]',
+  blue: 'border-l-4 border-l-accent-blue border-y border-r border-y-border/10 border-r-border/10 bg-accent-blue/[0.08]',
+  purple: 'border-l-4 border-l-accent-purple border-y border-r border-y-border/10 border-r-border/10 bg-accent-purple/[0.08]',
 };
 
 function Section({ title, accent, children }: { title: string; accent?: Accent; children: React.ReactNode }) {
   return (
     <div className="mt-8 border-t border-border/10 pt-6">
-      <h2 className={`mb-3 text-[13px] font-semibold uppercase tracking-wide ${accent ? ACCENT_TITLE[accent] : 'text-text-tertiary'}`}>
+      <h2
+        className={`mb-3 inline-block rounded-md px-2.5 py-1.5 text-[13px] font-semibold uppercase tracking-wide ${
+          accent ? ACCENT_BADGE[accent] : 'text-text-tertiary'
+        }`}
+      >
         {title}
       </h2>
       {children}
@@ -42,11 +53,7 @@ function Section({ title, accent, children }: { title: string; accent?: Accent; 
 
 function Row({ accent, children }: { accent?: Accent; children: React.ReactNode }) {
   return (
-    <div
-      className={`flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 ${
-        accent ? ACCENT_BORDER[accent] : 'border-border/10 bg-bg-2'
-      }`}
-    >
+    <div className={`flex flex-wrap items-center gap-2 rounded-xl px-4 py-3 ${accent ? ACCENT_ROW[accent] : 'border border-border/10 bg-bg-2'}`}>
       {children}
     </div>
   );
