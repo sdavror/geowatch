@@ -191,8 +191,24 @@ export class PersonResolutionService {
     const llmBudget: LlmBudget = { remaining: BACKFILL_LLM_BUDGET };
     let resolved = 0;
     for (const o of officers) {
-      const { personId } = await this.resolveOfficer(o.name, o.role, o.countryId, o.sourceId, llmBudget);
-      await this.prisma.entityOfficer.update({ where: { id: o.id }, data: { personId } });
+      const { personId, queuedReviewId } = await this.resolveOfficer(o.name, o.role, o.countryId, o.sourceId, llmBudget);
+      // Conditional on personId still being null: if this exact row got
+      // resolved by another call in the meantime (a retried/overlapping
+      // backfill run, or a process interrupted mid-batch by a host/container
+      // restart — confirmed live, 609 orphan Persons from exactly this race
+      // after a Docker restart interrupted a run), this update loses the
+      // race and the Person + review just created above is pure noise with
+      // zero real officer attached. Clean up rather than leave it as a
+      // phantom in the review queue.
+      const { count } = await this.prisma.entityOfficer.updateMany({
+        where: { id: o.id, personId: null },
+        data: { personId },
+      });
+      if (count === 0) {
+        if (queuedReviewId) await this.prisma.personMergeReview.deleteMany({ where: { id: queuedReviewId } });
+        await this.prisma.person.delete({ where: { id: personId } }); // cascades its alias
+        continue;
+      }
       resolved++;
     }
     if (llmBudget.remaining === 0) {
