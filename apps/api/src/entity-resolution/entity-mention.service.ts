@@ -57,6 +57,32 @@ export class EntityMentionService {
   }
 
   /**
+   * Same matcher, no persistence — for text that isn't a saved Article
+   * (e.g. a free-text event description fed to the event-impact analysis
+   * prompt). Returns resolved names/regimes directly since the caller has
+   * no Entity rows of its own to join against.
+   */
+  async matchText(text: string): Promise<Array<{ entityId: string; matchedText: string; canonicalName: string; regimes: string[] }>> {
+    const candidates = await this.getCandidates();
+    const matches = matchEntityMentions(text, candidates);
+    if (matches.length === 0) return [];
+
+    const entities = await this.prisma.entity.findMany({
+      where: { id: { in: matches.map((m) => m.entityId) } },
+      select: { id: true, canonicalName: true, sanctions: { select: { regime: true } } },
+    });
+    const byId = new Map(entities.map((e) => [e.id, e]));
+
+    return matches
+      .map((m) => {
+        const e = byId.get(m.entityId);
+        if (!e) return null;
+        return { entityId: m.entityId, matchedText: m.matchedText, canonicalName: e.canonicalName, regimes: [...new Set(e.sanctions.map((s) => s.regime))] };
+      })
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+  }
+
+  /**
    * Works through not-yet-scanned articles in batches — call repeatedly to
    * cover the full backlog (same "call again to keep working through the
    * remainder" shape as EntityMergeReviewService.llmJudgeUnreviewedFuzzy).
