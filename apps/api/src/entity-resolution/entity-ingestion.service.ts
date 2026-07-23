@@ -211,14 +211,15 @@ export class EntityIngestionService {
   // nothing ever swept the EXISTING sanctioned-entity pool against a newly
   // added registry to discover cross-border registrations no one searched
   // for yet (e.g. a Russian sanctioned company's unnoticed Norwegian
-  // subsidiary). Small weekly batches, spread across different weekdays and
-  // paced between calls — conservative on purpose: several of these are
-  // free/undocumented third-party APIs (Slovakia's aggregator, Switzerland
-  // Zefix's frontend endpoint) this project has already been careful not to
-  // hammer (see the Comtrade/trade.gov rate-limit incidents in project
-  // history). See sweepRegistry() for how a batch converges on full
-  // coverage over time instead of re-trying the same failures forever.
-  private readonly REGISTRY_SWEEP_BATCH_SIZE = 30;
+  // subsidiary). Weekly batches, spread across different weekdays and
+  // paced between calls (still 1.5s/call below) — the pool is ~9,700
+  // sanctioned entities, and the original batch of 30/week would have
+  // taken over 6 years to sweep even once. 250/week per registry (~6 min
+  // of paced calls) reaches full one-time coverage in under a year while
+  // staying well clear of anything that looked like real rate-limiting in
+  // this project's history (the Comtrade/trade.gov 429 incidents were
+  // triggered by unpaced *bursts*, not a modest weekly volume).
+  private readonly REGISTRY_SWEEP_BATCH_SIZE = 250;
 
   @Cron('0 0 10 * * 2') // Tuesdays 10:00 UTC
   async scheduledNorwaySweep() {

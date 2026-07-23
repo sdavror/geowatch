@@ -111,7 +111,7 @@ export function EntityMentionsPanel({
                   <div className="mt-0.5 text-[10px] text-text-tertiary">
                     matched &ldquo;{m.matchedText}&rdquo;
                     {m.sanctions.length > 0 && (
-                      <span className="ml-1.5 rounded-full bg-red-500/10 px-1.5 py-0.5 font-medium text-red-500">
+                      <span className="ml-1.5 rounded-full bg-status-conflict/15 px-1.5 py-0.5 font-semibold text-status-conflict">
                         {m.sanctions.map((s) => s.regime).join(', ')}
                       </span>
                     )}
@@ -148,7 +148,7 @@ export function EntityMentionsPanel({
               >
                 <span className="truncate">{r.canonicalName}</span>
                 {r.sanctionCount > 0 && (
-                  <span className="ml-2 flex-shrink-0 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-500">
+                  <span className="ml-2 flex-shrink-0 rounded-full bg-status-conflict/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-conflict">
                     {r.sanctionCount}
                   </span>
                 )}

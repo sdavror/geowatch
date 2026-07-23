@@ -154,7 +154,7 @@ export function EntityReviewsManager() {
                   r.confidence >= 90
                     ? 'bg-status-stable/15 text-status-stable'
                     : r.confidence >= 70
-                      ? 'bg-amber-500/15 text-amber-500'
+                      ? 'bg-status-unstable/20 text-status-unstable'
                       : 'bg-bg-3 text-text-tertiary'
                 }`}
               >
