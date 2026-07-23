@@ -243,6 +243,7 @@ export class ArticlesService {
       comments7d,
       unreadMessages,
       pendingEntityReviews,
+      pendingPersonReviews,
     ] = await Promise.all([
         this.statusCounts(),
         this.prisma.article.count(),
@@ -258,6 +259,7 @@ export class ArticlesService {
         this.prisma.comment.count({ where: { createdAt: { gte: d7 } } }),
         this.prisma.message.count({ where: { toId: userId, readAt: null } }),
         this.prisma.entityMergeReview.count({ where: { status: 'pending' } }),
+        this.prisma.personMergeReview.count({ where: { status: 'pending' } }),
       ]);
 
     return {
@@ -271,6 +273,7 @@ export class ArticlesService {
       comments7d,
       unreadMessages,
       pendingEntityReviews,
+      pendingPersonReviews,
     };
   }
 

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeCompanyName, normalizePersonName, bigramSimilarity } from './name-similarity.util';
 import { LlmEntityMatchService } from './llm-entity-match.service';
+import { PersonResolutionService } from './person-resolution.service';
 
 export type IdentifierType = 'lei' | 'reg_number' | 'tax_id' | 'cik';
 
@@ -115,6 +116,7 @@ export class EntityResolutionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmEntityMatchService,
+    private readonly personResolution: PersonResolutionService,
   ) {}
 
   /**
@@ -216,7 +218,7 @@ export class EntityResolutionService {
     }
 
     if (record.profile) await this.fillProfileFields(entityId, record.profile);
-    if (record.officers?.length) await this.addOfficers(entityId, sourceId, record.officers);
+    if (record.officers?.length) await this.addOfficers(entityId, sourceId, record.officers, llmBudget);
 
     const allNames = [record.name, ...record.aliases];
     for (const name of new Set(allNames)) {
@@ -343,7 +345,12 @@ export class EntityResolutionService {
    * name+role+sourceId repeat (the same source re-confirming on a later
    * ingest) still short-circuits via the DB upsert, unchanged from before.
    */
-  async addOfficers(entityId: string, sourceId: string, officers: NormalizedOfficer[]): Promise<number> {
+  async addOfficers(
+    entityId: string,
+    sourceId: string,
+    officers: NormalizedOfficer[],
+    llmBudget?: LlmBudget,
+  ): Promise<number> {
     const existing = await this.prisma.entityOfficer.findMany({
       where: { entityId },
       select: { name: true, role: true, countryId: true },
@@ -366,11 +373,25 @@ export class EntityResolutionService {
       });
       if (isDuplicate) continue;
 
+      // Cross-entity Person resolution — a separate, more conservative
+      // pipeline than the within-entity dedup above (see
+      // PersonResolutionService doc comment). Runs once per surviving
+      // (non-duplicate) officer row; shares this ingestion run's LLM budget
+      // with company-level fuzzy matching so a large batch still can't
+      // trigger unbounded local-inference calls.
+      const { personId } = await this.personResolution.resolveOfficer(
+        officer.name,
+        officer.role,
+        countryId,
+        sourceId,
+        llmBudget,
+      );
+
       await this.prisma.entityOfficer.upsert({
         where: {
           entityId_name_role_sourceId: { entityId, name: officer.name, role: officer.role, sourceId },
         },
-        create: { entityId, name: officer.name, role: officer.role, countryId, sourceId },
+        create: { entityId, name: officer.name, role: officer.role, countryId, sourceId, personId },
         update: {},
       });
       // Keep the in-memory candidate pool current within this same batch —

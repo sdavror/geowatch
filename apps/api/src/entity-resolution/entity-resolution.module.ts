@@ -6,6 +6,9 @@ import { EntityIngestionService } from './entity-ingestion.service';
 import { EntityMergeReviewService } from './entity-merge-review.service';
 import { EntityMentionService } from './entity-mention.service';
 import { LlmEntityMatchService } from './llm-entity-match.service';
+import { PersonResolutionService } from './person-resolution.service';
+import { PersonMergeReviewService } from './person-merge-review.service';
+import { LlmPersonMatchService } from './llm-person-match.service';
 import { OfacSdnAdapter } from './ofac-sdn.adapter';
 import { GleifAdapter } from './gleif.adapter';
 import { EuSanctionsAdapter } from './eu-sanctions.adapter';
@@ -37,6 +40,9 @@ import { OllamaClient } from '../analysis/ollama.client';
     EntityMergeReviewService,
     EntityMentionService,
     LlmEntityMatchService,
+    PersonResolutionService,
+    PersonMergeReviewService,
+    LlmPersonMatchService,
     OllamaClient,
     OfacSdnAdapter,
     GleifAdapter,

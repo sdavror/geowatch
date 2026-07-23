@@ -324,6 +324,8 @@ model Source {
   entityRelationships EntityRelationship[]
   entityOfficers    EntityOfficer[]
   entityEnrichmentAttempts EntityEnrichmentAttempt[]
+  personAliases     PersonAlias[]
+  personIdentifiers PersonIdentifier[]
 
   @@map("sources")
 }
@@ -421,11 +423,18 @@ model EntityOfficer {
   sourceId  String      @map("source_id") @db.Uuid
   source    Source      @relation(fields: [sourceId], references: [id])
   createdAt DateTime    @default(now()) @map("created_at")
+  // Cross-entity Person resolution (optional layer on top of the per-source
+  // fact record above — see Person/PersonMergeReview below). SetNull, not
+  // Cascade: deleting/merging a Person must never delete the underlying
+  // officer fact, only unlink it.
+  personId  String?     @map("person_id") @db.Uuid
+  person    Person?     @relation(fields: [personId], references: [id], onDelete: SetNull)
 
   // Prevents duplicate rows on re-ingest of the same source (no per-officer
   // external id exists in most sources, so identity = this tuple).
   @@unique([entityId, name, role, sourceId])
   @@index([entityId])
+  @@index([personId])
   @@map("entity_officers")
 }
 
@@ -510,6 +519,108 @@ model EntityAlias {
   @@unique([entityId, name])
   @@index([entityId])
   @@map("entity_aliases")
+}
+
+// ─────────────────────────────────────────────
+// Cross-entity Person identity resolution — mirrors the Entity pipeline
+// above (Phase 1 exact identifier, Phase 2 fuzzy+country, Phase 3 LLM
+// gray-zone) but is deliberately more conservative on auto-decisioning.
+// Person-name matching lacks the strong signals company matching has
+// (no registration-number equivalent for most sources today; officer
+// records only ever carry name/role/countryId), and a false merge here
+// falsely links a real, unrelated individual to a sanctioned company's
+// leadership — a materially worse mistake than a false company merge.
+// So: candidates still only ever queue a PersonMergeReview, never
+// auto-merge, and unlike EntityMergeReview there is NO high-confidence
+// auto-approve tier at all — every real merge requires a human.
+// ─────────────────────────────────────────────
+
+model Person {
+  id               String   @id @default(uuid()) @db.Uuid
+  canonicalName    String
+  // Bounds fuzzy-match candidates only, same caveat as Entity.primaryCountryId.
+  primaryCountryId String?  @map("primary_country_id") @db.Char(2)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  aliases      PersonAlias[]
+  identifiers  PersonIdentifier[]
+  officerRoles EntityOfficer[]
+  reviewsAsA   PersonMergeReview[] @relation("PersonMergeReviewA")
+  reviewsAsB   PersonMergeReview[] @relation("PersonMergeReviewB")
+
+  @@index([primaryCountryId])
+  @@map("persons")
+}
+
+model PersonAlias {
+  id        String   @id @default(uuid()) @db.Uuid
+  personId  String   @map("person_id") @db.Uuid
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  name      String
+  sourceId  String?  @map("source_id") @db.Uuid
+  source    Source?  @relation(fields: [sourceId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([personId, name])
+  @@index([personId])
+  @@map("person_aliases")
+}
+
+enum PersonIdentifierType {
+  national_id
+  passport
+  tax_id
+}
+
+// Forward-compatible, honestly near-unused today: no current officer-source
+// adapter supplies a strong person identifier (confirmed live — every
+// officer record is name/role/countryId only). Kept for parity with
+// EntityIdentifier and in case a future source (e.g. a real UBO register
+// with DOB/national-ID fields) adds one.
+model PersonIdentifier {
+  id        String               @id @default(uuid()) @db.Uuid
+  personId  String               @map("person_id") @db.Uuid
+  person    Person               @relation(fields: [personId], references: [id], onDelete: Cascade)
+  type      PersonIdentifierType
+  value     String
+  countryId String               @default("") @map("country_id") @db.VarChar(2)
+  sourceId  String?              @map("source_id") @db.Uuid
+  source    Source?              @relation(fields: [sourceId], references: [id])
+  createdAt DateTime             @default(now()) @map("created_at")
+
+  @@unique([type, value, countryId])
+  @@index([personId])
+  @@map("person_identifiers")
+}
+
+enum PersonMergeReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+model PersonMergeReview {
+  id        String                  @id @default(uuid()) @db.Uuid
+  // Nullable + SetNull, same reasoning as EntityMergeReview: a merge decision
+  // is an audit record that must survive the losing side's deletion.
+  personAId String?                 @map("person_a_id") @db.Uuid
+  personA   Person?                 @relation("PersonMergeReviewA", fields: [personAId], references: [id], onDelete: SetNull)
+  personBId String?                 @map("person_b_id") @db.Uuid
+  personB   Person?                 @relation("PersonMergeReviewB", fields: [personBId], references: [id], onDelete: SetNull)
+  personACanonicalName String?      @map("person_a_canonical_name")
+  personBCanonicalName String?      @map("person_b_canonical_name")
+  confidence Float
+  matchedOn  Json                   @map("matched_on")
+  status     PersonMergeReviewStatus @default(pending)
+  reviewerId String?                @map("reviewer_id") @db.Uuid
+  reviewer   User?                  @relation(fields: [reviewerId], references: [id])
+  createdAt  DateTime               @default(now()) @map("created_at")
+  reviewedAt DateTime?              @map("reviewed_at")
+
+  @@unique([personAId, personBId])
+  @@index([status])
+  @@map("person_merge_reviews")
 }
 
 // Raw per-source record backing an Entity — kept for audit ("why did we
@@ -693,6 +804,7 @@ model User {
   sentMessages     Message[] @relation("sentMessages")
   receivedMessages Message[] @relation("receivedMessages")
   entityMergeReviews EntityMergeReview[]
+  personMergeReviews PersonMergeReview[]
 
   @@map("users")
 }

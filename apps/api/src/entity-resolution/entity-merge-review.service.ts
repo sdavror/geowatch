@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmEntityMatchService } from './llm-entity-match.service';
+import { PersonMergeReviewService } from './person-merge-review.service';
 
 /**
  * Executes (or dismisses) a Phase 2 fuzzy-match suggestion. A genuinely
@@ -23,6 +24,7 @@ export class EntityMergeReviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmEntityMatchService,
+    private readonly personReviews: PersonMergeReviewService,
   ) {}
 
   // Daily rather than weekly-after-ingest: reviews also accumulate from
@@ -47,6 +49,9 @@ export class EntityMergeReviewService {
     } catch (err) {
       this.logger.error(`Scheduled review-queue maintenance failed: ${(err as Error).message}`);
     }
+    // Separate try/catch: a person-review maintenance failure shouldn't be
+    // conflated with (or masked by) the entity pass above in the log.
+    await this.personReviews.scheduledQueueMaintenance();
   }
 
   async listPending() {
