@@ -601,6 +601,31 @@ export class ArticlesService {
     return result;
   }
 
+  /**
+   * Sanctioned entities the ingestion pipeline's keyword scan resolved in
+   * this article (see EntityMentionService) — kept as its own endpoint
+   * rather than folded into serializeArticle/findOne's cached payload,
+   * since a later backfill run can add mentions to an already-cached
+   * article and this stays cheap enough not to need its own cache.
+   */
+  async findEntityMentions(articleId: string) {
+    const mentions = await this.prisma.articleEntity.findMany({
+      where: { articleId },
+      include: {
+        entity: {
+          select: { id: true, canonicalName: true, primaryCountryId: true, sanctions: { select: { regime: true, program: true } } },
+        },
+      },
+    });
+    return mentions.map((m) => ({
+      entityId: m.entity.id,
+      canonicalName: m.entity.canonicalName,
+      primaryCountryId: m.entity.primaryCountryId,
+      matchedText: m.matchedText,
+      sanctions: m.entity.sanctions,
+    }));
+  }
+
   // ── Serialization ──────────────────────────────────
   // includeBody controls whether the full article text is returned — the
   // list view only needs the AI summary, so we skip shipping full bodies

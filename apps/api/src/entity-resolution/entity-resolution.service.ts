@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizeCompanyName, bigramSimilarity } from './name-similarity.util';
+import { normalizeCompanyName, normalizePersonName, bigramSimilarity } from './name-similarity.util';
 import { LlmEntityMatchService } from './llm-entity-match.service';
 
 export type IdentifierType = 'lei' | 'reg_number' | 'tax_id' | 'cik';
@@ -321,8 +321,34 @@ export class EntityResolutionService {
     }
   }
 
-  /** Upserts each officer fact-record; a no-op for ones already recorded from this exact source. */
+  // Same person reported by two different sources rarely comes through with
+  // byte-identical spelling — and even when it does, the upsert key below
+  // includes sourceId, so an exact-match name from a SECOND source would
+  // still create a second row. Real gap: nothing stopped "Igor Ivanov"
+  // (Companies House) and "IVANOV, Igor" (Estonia) from becoming two
+  // officer records for the same entity. This threshold only catches
+  // spelling/casing/punctuation noise on an otherwise-matching name, same
+  // country, same role — it does NOT attempt cross-entity person identity
+  // resolution (the harder "is this the same John Smith at two different
+  // companies" question stays deliberately out of scope, same as the
+  // original decision not to model Person as its own resolvable entity).
+  private readonly OFFICER_DEDUP_THRESHOLD = 0.85;
+
+  /**
+   * Upserts each officer fact-record. Within one entity, a new officer whose
+   * normalized name/role/country closely matches one already on file is
+   * treated as a re-report of the same person and skipped — the
+   * first-seen source's row stays authoritative, same "first write wins"
+   * semantics EntityAlias already has via its name-only dedup key. An exact
+   * name+role+sourceId repeat (the same source re-confirming on a later
+   * ingest) still short-circuits via the DB upsert, unchanged from before.
+   */
   async addOfficers(entityId: string, sourceId: string, officers: NormalizedOfficer[]): Promise<number> {
+    const existing = await this.prisma.entityOfficer.findMany({
+      where: { entityId },
+      select: { name: true, role: true, countryId: true },
+    });
+
     for (const officer of officers) {
       // Defensive guard, not the fix: countryId is CHAR(2), and at least one
       // source (Latvia) turned out to sometimes hand over a compound
@@ -331,6 +357,15 @@ export class EntityResolutionService {
       // with the same kind of dirty data degrades to "no country" instead
       // of taking the run down.
       const countryId = officer.countryId && officer.countryId.length === 2 ? officer.countryId : null;
+
+      const normalizedIncoming = normalizePersonName(officer.name);
+      const isDuplicate = existing.some((e) => {
+        if (e.role !== officer.role) return false;
+        if (e.countryId && countryId && e.countryId !== countryId) return false;
+        return bigramSimilarity(normalizePersonName(e.name), normalizedIncoming) >= this.OFFICER_DEDUP_THRESHOLD;
+      });
+      if (isDuplicate) continue;
+
       await this.prisma.entityOfficer.upsert({
         where: {
           entityId_name_role_sourceId: { entityId, name: officer.name, role: officer.role, sourceId },
@@ -338,6 +373,11 @@ export class EntityResolutionService {
         create: { entityId, name: officer.name, role: officer.role, countryId, sourceId },
         update: {},
       });
+      // Keep the in-memory candidate pool current within this same batch —
+      // two near-duplicate names arriving in the SAME officers[] array
+      // (possible from a source listing the same person twice) should only
+      // insert once too.
+      existing.push({ name: officer.name, role: officer.role, countryId });
     }
     return officers.length;
   }

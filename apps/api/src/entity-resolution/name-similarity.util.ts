@@ -36,6 +36,23 @@ const LEGAL_SUFFIXES = [
   'limited',
 ];
 
+// Strips common honorifics/titles a source might prepend, not legal-form
+// suffixes (this is for people, not companies) — deliberately narrow, since
+// guessing at name-part reordering ("Last, First" vs "First Last") risks
+// silently merging two different people rather than just missing a real
+// duplicate. Two-source officer dedup only needs to catch spelling/casing
+// noise on an otherwise-matching name, not solve general name matching.
+const PERSON_TITLES = ['mr', 'mrs', 'ms', 'miss', 'dr', 'prof'];
+
+export function normalizePersonName(raw: string): string {
+  let s = raw.toLowerCase();
+  s = s.replace(/["'.,]/g, ' ');
+  for (const title of PERSON_TITLES) {
+    s = s.replace(new RegExp(`\\b${title}\\b`, 'g'), ' ');
+  }
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 export function normalizeCompanyName(raw: string): string {
   let s = raw.toLowerCase();
   s = s.replace(/["'.,]/g, ' ');

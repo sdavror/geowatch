@@ -323,6 +323,7 @@ model Source {
   entitySanctions   EntitySanction[]
   entityRelationships EntityRelationship[]
   entityOfficers    EntityOfficer[]
+  entityEnrichmentAttempts EntityEnrichmentAttempt[]
 
   @@map("sources")
 }
@@ -391,6 +392,8 @@ model Entity {
   reviewsAsB   EntityMergeReview[] @relation("MergeReviewB")
   relationshipsAsParent EntityRelationship[] @relation("RelationshipParent")
   relationshipsAsChild  EntityRelationship[] @relation("RelationshipChild")
+  articleMentions ArticleEntity[]
+  enrichmentAttempts EntityEnrichmentAttempt[]
 
   @@index([primaryCountryId])
   @@map("entities")
@@ -527,6 +530,26 @@ model EntitySourceLink {
   @@map("entity_source_links")
 }
 
+// One row per (entity, on-demand-registry) enrichment attempt, whether or
+// not it found anything — distinct from EntitySourceLink, which only
+// records a SUCCESSFUL match. Without a negative-result record, a nightly
+// sweep over the sanctioned-entity pool (see EntityIngestionService's
+// registry-sweep crons) couldn't tell "never tried against this registry"
+// from "tried and this entity genuinely isn't in it," and would either
+// re-attempt the same failed lookups forever or never converge on full
+// coverage of the pool.
+model EntityEnrichmentAttempt {
+  entityId    String   @map("entity_id") @db.Uuid
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sourceId    String   @map("source_id") @db.Uuid
+  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  attemptedAt DateTime @default(now()) @map("attempted_at")
+  found       Boolean
+
+  @@id([entityId, sourceId])
+  @@map("entity_enrichment_attempts")
+}
+
 // Per-entity sanction listing — distinct from the pre-existing SanctionRecord
 // above (that one is a per-country OpenSanctions entity-count aggregate for
 // the Country Health score; this one is "this specific resolved Entity is
@@ -596,10 +619,17 @@ model Article {
   author                 User?     @relation(fields: [authorId], references: [id])
   fetchedAt              DateTime  @default(now()) @map("fetched_at")
   createdAt               DateTime  @default(now()) @map("created_at")
+  // Null until the sanctioned-entity mention scan has run once — distinct
+  // from "entityMentions is empty," which is also true for an article that
+  // genuinely mentions no sanctioned entity. Without this, a backfill job
+  // filtering on "has no mentions yet" would re-scan every zero-match
+  // article forever instead of converging.
+  entityMentionsScannedAt DateTime? @map("entity_mentions_scanned_at")
 
-  eventLinks ArticleEvent[]
-  comments   Comment[]
-  revisions  ArticleRevision[]
+  eventLinks    ArticleEvent[]
+  entityMentions ArticleEntity[]
+  comments      Comment[]
+  revisions     ArticleRevision[]
 
   @@map("articles")
   @@index([status])
@@ -618,6 +648,27 @@ model ArticleEvent {
 
   @@id([articleId, eventId])
   @@map("article_events")
+}
+
+// Auto-resolved keyword mentions of a SANCTIONED Entity within an article's
+// title/body — deliberately scoped to sanctioned entities only (not every
+// resolved company), matching the actual product need ("a sanctioned
+// company mentioned in an article should resolve") rather than attempting
+// general company-mention extraction against the full ~20k-entity pool,
+// which wouldn't scale as a per-article keyword scan. matchedText records
+// which alias/name actually matched, for a human to sanity-check false
+// positives (a short/generic company name colliding with ordinary text).
+model ArticleEntity {
+  articleId   String   @map("article_id") @db.Uuid
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  entityId    String   @map("entity_id") @db.Uuid
+  entity      Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  matchedText String   @map("matched_text")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@id([articleId, entityId])
+  @@index([entityId])
+  @@map("article_entities")
 }
 
 // ─────────────────────────────────────────────
