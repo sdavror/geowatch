@@ -568,7 +568,7 @@ export function EditorWorkspace({ article, initial, onClose }: EditorWorkspacePr
                 )}
               </div>
               <ResearchPanel text={`${draft.title}. ${draft.body}`.slice(0, 1900)} />
-              <EntityMentionsPanel articleId={articleId} />
+              <EntityMentionsPanel articleId={articleId} onInsert={insertAtCursor} />
             </div>
           </div>
         </div>
@@ -844,5 +844,14 @@ export function EditorWorkspace({ article, initial, onClose }: EditorWorkspacePr
     const at = el ? el.selectionStart : draft.body.length;
     setField('body', `${draft.body.slice(0, at)}[${r.title}](/news/${r.id})${draft.body.slice(at)}`);
     setRelated(null);
+  }
+
+  // Generic version of the same insert-at-cursor pattern, for anything that
+  // just wants to drop pre-formatted markdown in — currently used by
+  // EntityMentionsPanel's "cite a company" search.
+  function insertAtCursor(markdown: string) {
+    const el = bodyRef.current;
+    const at = el ? el.selectionStart : draft.body.length;
+    setField('body', `${draft.body.slice(0, at)}${markdown}${draft.body.slice(at)}`);
   }
 }
