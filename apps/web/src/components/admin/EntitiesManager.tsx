@@ -19,7 +19,7 @@ function SourceTag({ name }: { name: string | undefined | null }) {
   );
 }
 
-function EntityProfile({ id, onBack }: { id: string; onBack: () => void }) {
+function EntityProfile({ id, onBack, onNavigate }: { id: string; onBack: () => void; onNavigate: (id: string) => void }) {
   const [entity, setEntity] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,19 +47,18 @@ function EntityProfile({ id, onBack }: { id: string; onBack: () => void }) {
     ['Country', entity.primaryCountryId],
   ];
 
+  const hasRelationships = entity.relationshipsAsParent.length > 0 || entity.relationshipsAsChild.length > 0;
+
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="mb-4 text-[11px] text-text-tertiary hover:text-text-secondary"
-      >
+      <button onClick={onBack} className="mb-4 text-[11px] text-text-tertiary hover:text-text-secondary">
         ← Back to search
       </button>
 
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-base font-bold text-text-primary">{entity.canonicalName}</h2>
         {entity.sanctions.length > 0 && (
-          <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-500">
+          <span className="rounded-full bg-status-conflict/15 px-2 py-0.5 text-[10px] font-semibold text-status-conflict">
             {entity.sanctions.length} sanction{entity.sanctions.length === 1 ? '' : 's'}
           </span>
         )}
@@ -76,6 +75,63 @@ function EntityProfile({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         ))}
       </div>
+
+      {/* Key facts first: sanctions and ownership structure are what this tool exists to surface. */}
+      {entity.sanctions.length > 0 && (
+        <Section title={`⚠ Sanctions (${entity.sanctions.length})`} accent="conflict">
+          <Rows>
+            {entity.sanctions.map((s) => (
+              <Row key={s.id} accent="conflict">
+                <span className="text-[12px] font-semibold text-text-primary">{s.regime}</span>
+                <span className="text-[11px] text-text-secondary">{s.program}</span>
+                <SourceTag name={s.source?.name} />
+              </Row>
+            ))}
+          </Rows>
+        </Section>
+      )}
+
+      {hasRelationships && (
+        <Section title="🔗 Corporate relationships" accent="blue">
+          <Rows>
+            {entity.relationshipsAsChild.map((r, idx) =>
+              r.parent ? (
+                <Row key={`p-${idx}`} accent="blue">
+                  <span className="text-[10px] uppercase text-text-tertiary">Parent</span>
+                  <button onClick={() => onNavigate(r.parent!.id)} className="text-[12px] font-medium text-accent-blue hover:underline">
+                    {r.parent.canonicalName}
+                  </button>
+                </Row>
+              ) : null,
+            )}
+            {entity.relationshipsAsParent.map((r, idx) =>
+              r.child ? (
+                <Row key={`c-${idx}`} accent="blue">
+                  <span className="text-[10px] uppercase text-text-tertiary">Subsidiary</span>
+                  <button onClick={() => onNavigate(r.child!.id)} className="text-[12px] font-medium text-accent-blue hover:underline">
+                    {r.child.canonicalName}
+                  </button>
+                </Row>
+              ) : null,
+            )}
+          </Rows>
+        </Section>
+      )}
+
+      {entity.officers.length > 0 && (
+        <Section title={`👤 Officers & beneficial owners (${entity.officers.length})`} accent="purple">
+          <Rows>
+            {entity.officers.map((o) => (
+              <Row key={o.id} accent="purple">
+                <span className="text-[12px] text-text-primary">{o.name}</span>
+                <span className="text-[10px] uppercase text-accent-purple">{ROLE_LABEL[o.role] ?? o.role}</span>
+                {o.countryId && <span className="text-[10px] text-text-tertiary">{o.countryId}</span>}
+                <SourceTag name={o.source?.name} />
+              </Row>
+            ))}
+          </Rows>
+        </Section>
+      )}
 
       <Section title={`Aliases (${entity.aliases.length})`}>
         <div className="flex flex-wrap gap-1.5">
@@ -106,56 +162,6 @@ function EntityProfile({ id, onBack }: { id: string; onBack: () => void }) {
         </Rows>
       </Section>
 
-      <Section title={`Sanctions (${entity.sanctions.length})`}>
-        <Rows>
-          {entity.sanctions.map((s) => (
-            <Row key={s.id}>
-              <span className="text-[12px] font-medium text-text-primary">{s.regime}</span>
-              <span className="text-[11px] text-text-secondary">{s.program}</span>
-              <SourceTag name={s.source?.name} />
-            </Row>
-          ))}
-          {entity.sanctions.length === 0 && <Empty />}
-        </Rows>
-      </Section>
-
-      <Section title={`Officers (${entity.officers.length})`}>
-        <Rows>
-          {entity.officers.map((o) => (
-            <Row key={o.id}>
-              <span className="text-[12px] text-text-primary">{o.name}</span>
-              <span className="text-[10px] uppercase text-text-tertiary">{ROLE_LABEL[o.role] ?? o.role}</span>
-              {o.countryId && <span className="text-[10px] text-text-tertiary">{o.countryId}</span>}
-              <SourceTag name={o.source?.name} />
-            </Row>
-          ))}
-          {entity.officers.length === 0 && <Empty />}
-        </Rows>
-      </Section>
-
-      {(entity.relationshipsAsParent.length > 0 || entity.relationshipsAsChild.length > 0) && (
-        <Section title="Corporate relationships">
-          <Rows>
-            {entity.relationshipsAsChild.map((r, idx) =>
-              r.parent ? (
-                <Row key={`p-${idx}`}>
-                  <span className="text-[10px] uppercase text-text-tertiary">Parent</span>
-                  <span className="text-[12px] text-text-primary">{r.parent.canonicalName}</span>
-                </Row>
-              ) : null,
-            )}
-            {entity.relationshipsAsParent.map((r, idx) =>
-              r.child ? (
-                <Row key={`c-${idx}`}>
-                  <span className="text-[10px] uppercase text-text-tertiary">Subsidiary</span>
-                  <span className="text-[12px] text-text-primary">{r.child.canonicalName}</span>
-                </Row>
-              ) : null,
-            )}
-          </Rows>
-        </Section>
-      )}
-
       <Section title={`Source links (${entity.sourceLinks.length})`}>
         <Rows>
           {entity.sourceLinks.map((l, idx) => (
@@ -172,10 +178,26 @@ function EntityProfile({ id, onBack }: { id: string; onBack: () => void }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+type Accent = 'conflict' | 'blue' | 'purple' | undefined;
+
+const ACCENT_TITLE: Record<string, string> = {
+  conflict: 'text-status-conflict',
+  blue: 'text-accent-blue',
+  purple: 'text-accent-purple',
+};
+
+const ACCENT_BORDER: Record<string, string> = {
+  conflict: 'border-status-conflict/25 bg-status-conflict/[0.06]',
+  blue: 'border-accent-blue/25 bg-accent-blue/[0.06]',
+  purple: 'border-accent-purple/25 bg-accent-purple/[0.06]',
+};
+
+function Section({ title, accent, children }: { title: string; accent?: Accent; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">{title}</h3>
+      <h3 className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${accent ? ACCENT_TITLE[accent] : 'text-text-tertiary'}`}>
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -185,9 +207,13 @@ function Rows({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-col gap-1">{children}</div>;
 }
 
-function Row({ children }: { children: React.ReactNode }) {
+function Row({ accent, children }: { accent?: Accent; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/10 bg-bg-2 px-3 py-2">
+    <div
+      className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
+        accent ? ACCENT_BORDER[accent] : 'border-border/10 bg-bg-2'
+      }`}
+    >
       {children}
     </div>
   );
@@ -199,15 +225,20 @@ function Empty() {
 
 export function EntitiesManager() {
   const [query, setQuery] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [results, setResults] = useState<EntitySearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [history, setHistory] = useState<string[]>([]);
 
-  const search = async (q: string) => {
+  const search = async (q: string, all: boolean) => {
     setLoading(true);
     try {
-      setResults(await authFetch<EntitySearchResult[]>(`/entities?q=${encodeURIComponent(q)}`));
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (all) params.set('all', 'true');
+      setResults(await authFetch<EntitySearchResult[]>(`/entities?${params.toString()}`));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
@@ -216,30 +247,57 @@ export function EntitiesManager() {
     }
   };
 
-  // Initial load shows the most recently updated entities (empty query is
-  // valid on the backend — no `q` param filter).
+  // Initial load shows the most-sanctioned entities — the ones this tool
+  // exists to surface — not just "whatever was last touched."
   useEffect(() => {
-    void search('');
-  }, []);
+    void search('', showAll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAll]);
+
+  const openEntity = (id: string) => {
+    if (selectedId) setHistory((h) => [...h, selectedId]);
+    setSelectedId(id);
+  };
+  const goBack = () => {
+    const prev = history[history.length - 1];
+    if (prev) {
+      setHistory((h) => h.slice(0, -1));
+      setSelectedId(prev);
+    } else {
+      setSelectedId(null);
+    }
+  };
 
   if (selectedId) {
-    return <EntityProfile id={selectedId} onBack={() => setSelectedId(null)} />;
+    return <EntityProfile id={selectedId} onBack={goBack} onNavigate={openEntity} />;
   }
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold text-text-primary">Entities</h1>
+        <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+          <input
+            type="checkbox"
+            checked={showAll}
+            onChange={(e) => setShowAll(e.target.checked)}
+            className="accent-blue"
+          />
+          Show all (incl. non-sanctioned reference companies)
+        </label>
       </div>
 
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && search(query.trim())}
+        onKeyDown={(e) => e.key === 'Enter' && search(query.trim(), showAll)}
         placeholder="Search company name or alias…"
         className="mb-4 w-full max-w-md rounded-lg border border-border/10 bg-bg-2 px-3 py-2 text-[13px] text-text-primary placeholder:text-text-tertiary focus:border-accent-blue focus:outline-none"
       />
 
+      {!query && !showAll && (
+        <p className="mb-3 text-[11px] text-text-tertiary">Showing sanctioned entities, most sanctions first.</p>
+      )}
       {loading && <p className="text-xs text-text-tertiary">Loading…</p>}
       {error && <p className="mb-3 text-xs text-status-conflict">{error}</p>}
 
@@ -252,7 +310,7 @@ export function EntitiesManager() {
         {results.map((r) => (
           <motion.button
             key={r.id}
-            onClick={() => setSelectedId(r.id)}
+            onClick={() => openEntity(r.id)}
             variants={{
               hidden: { opacity: 0, y: 6 },
               visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 450, damping: 34 } },
@@ -260,18 +318,28 @@ export function EntitiesManager() {
             className="flex items-center gap-3 rounded-lg border border-border/10 bg-bg-2 px-3 py-2.5 text-left hover:bg-bg-3"
           >
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] text-text-primary">{r.canonicalName}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-[13px] text-text-primary">{r.canonicalName}</span>
+                {r.primaryCountryId && <span className="text-[10px] text-text-tertiary">{r.primaryCountryId}</span>}
+              </div>
               {r.aliases.length > 0 && (
                 <div className="mt-0.5 truncate text-[11px] text-text-tertiary">
                   {r.aliases.filter((a) => a !== r.canonicalName).slice(0, 3).join(' · ')}
                 </div>
               )}
             </div>
-            {r.sanctionCount > 0 && (
-              <span className="flex-shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-500">
-                {r.sanctionCount} sanction{r.sanctionCount === 1 ? '' : 's'}
-              </span>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              {(r.subsidiaryCount > 0 || r.hasParent) && (
+                <span className="rounded-full bg-accent-blue/15 px-2 py-0.5 text-[10px] font-medium text-accent-blue">
+                  🔗 {r.hasParent ? 'has parent' : `${r.subsidiaryCount} subsidiar${r.subsidiaryCount === 1 ? 'y' : 'ies'}`}
+                </span>
+              )}
+              {r.sanctionCount > 0 && (
+                <span className="rounded-full bg-status-conflict/15 px-2 py-0.5 text-[10px] font-semibold text-status-conflict">
+                  {r.sanctionCount} sanction{r.sanctionCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
           </motion.button>
         ))}
         {results.length === 0 && !loading && !error && (

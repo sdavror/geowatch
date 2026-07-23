@@ -15,18 +15,38 @@ const ROLE_LABEL: Record<string, string> = {
   officer: 'Officer',
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+type Accent = 'conflict' | 'blue' | 'purple' | undefined;
+
+const ACCENT_TITLE: Record<string, string> = {
+  conflict: 'text-status-conflict',
+  blue: 'text-accent-blue',
+  purple: 'text-accent-purple',
+};
+
+const ACCENT_BORDER: Record<string, string> = {
+  conflict: 'border-status-conflict/25 bg-status-conflict/[0.06]',
+  blue: 'border-accent-blue/25 bg-accent-blue/[0.06]',
+  purple: 'border-accent-purple/25 bg-accent-purple/[0.06]',
+};
+
+function Section({ title, accent, children }: { title: string; accent?: Accent; children: React.ReactNode }) {
   return (
     <div className="mt-8 border-t border-border/10 pt-6">
-      <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-text-tertiary">{title}</h2>
+      <h2 className={`mb-3 text-[13px] font-semibold uppercase tracking-wide ${accent ? ACCENT_TITLE[accent] : 'text-text-tertiary'}`}>
+        {title}
+      </h2>
       {children}
     </div>
   );
 }
 
-function Row({ children }: { children: React.ReactNode }) {
+function Row({ accent, children }: { accent?: Accent; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/10 bg-bg-2 px-4 py-3">
+    <div
+      className={`flex flex-wrap items-center gap-2 rounded-xl border px-4 py-3 ${
+        accent ? ACCENT_BORDER[accent] : 'border-border/10 bg-bg-2'
+      }`}
+    >
       {children}
     </div>
   );
@@ -54,6 +74,8 @@ export default function EntityDetailPage() {
         ['Country', entity.primaryCountryId],
       ]
     : [];
+
+  const hasRelationships = entity ? entity.relationshipsAsChild.length > 0 || entity.relationshipsAsParent.length > 0 : false;
 
   return (
     <div className="min-h-screen bg-bg">
@@ -89,8 +111,8 @@ export default function EntityDetailPage() {
                 {entity.canonicalName}
               </h1>
               {entity.sanctions.length > 0 && (
-                <span className="rounded-full bg-red-500/10 px-3 py-1 text-[13px] font-semibold text-red-500">
-                  {entity.sanctions.length} sanction{entity.sanctions.length === 1 ? '' : 's'} on file
+                <span className="rounded-full bg-status-conflict/15 px-3 py-1 text-[13px] font-semibold text-status-conflict">
+                  ⚠ {entity.sanctions.length} sanction{entity.sanctions.length === 1 ? '' : 's'} on file
                 </span>
               )}
             </div>
@@ -104,6 +126,63 @@ export default function EntityDetailPage() {
               ))}
             </div>
 
+            {/* Key facts first — sanctions and ownership structure are what this profile is for. */}
+            {entity.sanctions.length > 0 && (
+              <Section title={`⚠ Sanctions (${entity.sanctions.length})`} accent="conflict">
+                <div className="flex flex-col gap-2">
+                  {entity.sanctions.map((s) => (
+                    <Row key={s.id} accent="conflict">
+                      <span className="text-[14px] font-semibold text-text-primary">{s.regime}</span>
+                      <span className="text-[13px] text-text-secondary">{s.program}</span>
+                      <SourceTag name={s.source?.name} />
+                    </Row>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {hasRelationships && (
+              <Section title="🔗 Corporate relationships" accent="blue">
+                <div className="flex flex-col gap-2">
+                  {entity.relationshipsAsChild.map((r, idx) =>
+                    r.parent ? (
+                      <Row key={`p-${idx}`} accent="blue">
+                        <span className="text-[11px] uppercase text-text-tertiary">Parent</span>
+                        <Link href={`/entities/${r.parent.id}`} className="text-[14px] font-medium text-accent-blue hover:underline">
+                          {r.parent.canonicalName}
+                        </Link>
+                      </Row>
+                    ) : null,
+                  )}
+                  {entity.relationshipsAsParent.map((r, idx) =>
+                    r.child ? (
+                      <Row key={`c-${idx}`} accent="blue">
+                        <span className="text-[11px] uppercase text-text-tertiary">Subsidiary</span>
+                        <Link href={`/entities/${r.child.id}`} className="text-[14px] font-medium text-accent-blue hover:underline">
+                          {r.child.canonicalName}
+                        </Link>
+                      </Row>
+                    ) : null,
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {entity.officers.length > 0 && (
+              <Section title={`👤 Officers & beneficial owners (${entity.officers.length})`} accent="purple">
+                <div className="flex flex-col gap-2">
+                  {entity.officers.map((o) => (
+                    <Row key={o.id} accent="purple">
+                      <span className="text-[14px] text-text-primary">{o.name}</span>
+                      <span className="text-[11px] uppercase text-accent-purple">{ROLE_LABEL[o.role] ?? o.role}</span>
+                      {o.countryId && <span className="text-[11px] text-text-tertiary">{o.countryId}</span>}
+                      <SourceTag name={o.source?.name} />
+                    </Row>
+                  ))}
+                </div>
+              </Section>
+            )}
+
             {entity.aliases.length > 0 && (
               <Section title={`Also known as (${entity.aliases.length})`}>
                 <div className="flex flex-wrap gap-2">
@@ -116,62 +195,6 @@ export default function EntityDetailPage() {
                       <SourceTag name={a.source?.name} />
                     </span>
                   ))}
-                </div>
-              </Section>
-            )}
-
-            {entity.sanctions.length > 0 && (
-              <Section title={`Sanctions (${entity.sanctions.length})`}>
-                <div className="flex flex-col gap-2">
-                  {entity.sanctions.map((s) => (
-                    <Row key={s.id}>
-                      <span className="text-[14px] font-medium text-text-primary">{s.regime}</span>
-                      <span className="text-[13px] text-text-secondary">{s.program}</span>
-                      <SourceTag name={s.source?.name} />
-                    </Row>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {entity.officers.length > 0 && (
-              <Section title={`Officers & beneficial owners (${entity.officers.length})`}>
-                <div className="flex flex-col gap-2">
-                  {entity.officers.map((o) => (
-                    <Row key={o.id}>
-                      <span className="text-[14px] text-text-primary">{o.name}</span>
-                      <span className="text-[11px] uppercase text-text-tertiary">{ROLE_LABEL[o.role] ?? o.role}</span>
-                      {o.countryId && <span className="text-[11px] text-text-tertiary">{o.countryId}</span>}
-                      <SourceTag name={o.source?.name} />
-                    </Row>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {(entity.relationshipsAsChild.length > 0 || entity.relationshipsAsParent.length > 0) && (
-              <Section title="Corporate relationships">
-                <div className="flex flex-col gap-2">
-                  {entity.relationshipsAsChild.map((r, idx) =>
-                    r.parent ? (
-                      <Row key={`p-${idx}`}>
-                        <span className="text-[11px] uppercase text-text-tertiary">Parent</span>
-                        <Link href={`/entities/${r.parent.id}`} className="text-[14px] text-brand-text hover:underline">
-                          {r.parent.canonicalName}
-                        </Link>
-                      </Row>
-                    ) : null,
-                  )}
-                  {entity.relationshipsAsParent.map((r, idx) =>
-                    r.child ? (
-                      <Row key={`c-${idx}`}>
-                        <span className="text-[11px] uppercase text-text-tertiary">Subsidiary</span>
-                        <Link href={`/entities/${r.child.id}`} className="text-[14px] text-brand-text hover:underline">
-                          {r.child.canonicalName}
-                        </Link>
-                      </Row>
-                    ) : null,
-                  )}
                 </div>
               </Section>
             )}

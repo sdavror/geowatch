@@ -321,8 +321,11 @@ export interface EntitySearchResult {
   id: string;
   entityType: string;
   canonicalName: string;
+  primaryCountryId: string | null;
   aliases: string[];
   sanctionCount: number;
+  subsidiaryCount: number;
+  hasParent: boolean;
 }
 
 interface EntitySourceRef {
